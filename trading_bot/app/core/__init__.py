@@ -29,6 +29,10 @@ from app.core.slippage_learner import SlippageLearner, SlippageProfile
 from app.core.auto_hedge import AutoHedge, HedgeRecommendation
 from app.core.voice_alerts import VoiceAlertManager
 
+# V5.3 — Commercial
+from app.core.license_manager import LicenseManager
+from app.core.anti_tamper import AntiTamper
+
 __all__ = [
     'RegimeDetector', 'MarketRegime', 'RegimeResult',
     'AdaptiveStrategyVoter', 'create_adaptive_voter', 'AdaptiveVoteResult',
@@ -55,4 +59,7 @@ __all__ = [
     'SlippageLearner', 'SlippageProfile',
     'AutoHedge', 'HedgeRecommendation',
     'VoiceAlertManager',
+    # V5.3 Commercial
+    'LicenseManager',
+    'AntiTamper',
 ]

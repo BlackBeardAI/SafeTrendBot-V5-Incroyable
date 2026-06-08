@@ -17,6 +17,30 @@ from app.core.config_manager import config_manager
 from app.core.trading_engine_v4 import TradingEngineV4, BotState
 
 
+def check_license():
+    """Vérifie la licence — même en mode headless"""
+    from app.core.license_manager import LicenseManager
+    from app.core.anti_tamper import AntiTamper
+    try:
+        at = AntiTamper()
+        at.raise_if_tampered()
+    except RuntimeError as e:
+        print(f"[SECURITY] {e}")
+        sys.exit(1)
+
+    lm = LicenseManager(secret_key="safetrendbot_v5_secret_2026")
+    valid, message = lm.validate_license()
+    if valid:
+        print(f"[LICENSE] {message}")
+        return True
+
+    # Essai gratuit automatique en headless
+    print(f"[LICENSE] {message}")
+    print("[LICENSE] Essai gratuit de 7 jours activé (headless)")
+    lm.start_trial(days=7)
+    return True
+
+
 class HeadlessRunner:
     def __init__(self, paper=False, symbols=None):
         self.engine = TradingEngineV4()
@@ -63,6 +87,9 @@ class HeadlessRunner:
             print(f"[PERF] WinRate: {perf.win_rate}% | Sharpe: {perf.sharpe} | PF: {perf.profit_factor} | MaxDD: {perf.max_drawdown}%")
 
     def run(self):
+        # Vérification licence
+        check_license()
+
         print("=" * 50)
         print("SafeTrendBot V5 — Mode Headless")
         print("=" * 50)
