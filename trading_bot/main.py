@@ -1,8 +1,9 @@
 """
 Point d'entrée de SafeTrendBot
 Application desktop Windows/Linux pour trading automatisé
-"""
 
+Vérification de licence au démarrage — chaque utilisateur doit avoir une licence valide.
+"""
 import sys
 import os
 from pathlib import Path
@@ -11,9 +12,83 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.absolute()
 sys.path.insert(0, str(ROOT_DIR))
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QInputDialog, QLineEdit
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
+
+
+# ========================================================================
+# VÉRIFICATION LICENCE (obligatoire)
+# ========================================================================
+
+def check_license():
+    """
+    Vérifie la licence au démarrage.
+    Bloque l'application si pas de licence valide.
+    """
+    from app.core.license_manager import LicenseManager
+    from app.core.anti_tamper import AntiTamper
+
+    # 1. Anti-tamper
+    try:
+        at = AntiTamper()
+        at.raise_if_tampered()
+    except RuntimeError as e:
+        QMessageBox.critical(None, "Sécurité", str(e))
+        sys.exit(1)
+
+    # 2. License Manager
+    lm = LicenseManager(
+        secret_key="safetrendbot_v5_secret_2026",
+        # En prod, la clé secrète serait dans un fichier séparé / obfusquée
+    )
+
+    # Vérifier la licence locale
+    valid, message = lm.validate_license()
+    if valid:
+        print(f"[LICENSE] {message}")
+        return True
+
+    # Pas de licence valide — demander activation
+    print(f"[LICENSE] {message}")
+
+    # Proposer un essai de 7 jours
+    reply = QMessageBox.question(
+        None, "Licence requise",
+        f"{message}\n\nVoulez-vous démarrer un essai gratuit de 7 jours ?\n\n"
+        "Ou entrez votre clé de licence si vous en avez déjà acheté une.",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+        QMessageBox.StandardButton.Yes,
+    )
+
+    if reply == QMessageBox.StandardButton.Yes:
+        # Essai gratuit
+        trial_license = lm.start_trial(days=7)
+        QMessageBox.information(
+            None, "Essai gratuit activé",
+            "Votre essai gratuit de 7 jours est activé.\n\n"
+            "Pour acheter une licence complète : safetrendbot.com"
+        )
+        return True
+
+    elif reply == QMessageBox.StandardButton.No:
+        # Demander la clé
+        key, ok = QInputDialog.getText(
+            None, "Activation", "Entrez votre clé de licence :",
+            QLineEdit.EchoMode.Normal
+        )
+        if ok and key:
+            # Tentative d'activation en ligne
+            server_url = os.environ.get("SAFETRENDBOT_SERVER", "https://api.safetrendbot.com")
+            success, msg = lm.activate_online(key.strip(), server_url)
+            if success:
+                QMessageBox.information(None, "Activation", msg)
+                return True
+            else:
+                QMessageBox.critical(None, "Activation échouée", msg)
+                sys.exit(1)
+
+    sys.exit(0)
 
 
 def check_dependencies():
@@ -67,6 +142,9 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setQuitOnLastWindowClosed(False)  # Important pour le system tray
     app.setWindowIcon(create_app_icon())
+
+    # Vérification licence (obligatoire)
+    check_license()
 
     # Vérifier les dépendances
     ok, missing = check_dependencies()
