@@ -1,0 +1,76 @@
+# ============================================================
+# Fichiers sensibles - NE JAMAIS COMMITTER
+# ============================================================
+.env
+.env.local
+*.key
+*.pem
+config.local.json
+credentials.json
+**/secrets/
+
+# Identifiants et config utilisateur
+*_private.py
+mt5_credentials.*
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================================
+# Build et distribution
+# ============================================================
+build/
+dist/
+*.spec
+!build_installer.py
+installer/*.exe
+installer/*.zip
+installer/SafeTrendBot_Installer.iss
+
+# ============================================================
+# Données locales de l'application
+# ============================================================
+data/*.csv
+data/*.json
+data/cache/
+logs/
+*.log
+
+# ============================================================
+# IDE et éditeurs
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# MetaTrader 5 - fichiers compilés
+# ============================================================
+*.ex5
+*.ex4
+
+# ============================================================
+# Fichiers temporaires
+# ============================================================
+*.tmp
+*.bak
+*.backup
+*.orig
