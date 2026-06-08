@@ -249,8 +249,9 @@ def markdown_to_pdf(input_md: Path, output_pdf: Path, title: str):
 
 
 def main():
-    docs_dir = Path(__file__).parent / "docs"
-    output_dir = Path(__file__).parent / "docs" / "pdf"
+    script_dir = Path(__file__).parent.resolve()
+    docs_dir = script_dir / "docs"
+    output_dir = docs_dir / "pdf"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     files = [
