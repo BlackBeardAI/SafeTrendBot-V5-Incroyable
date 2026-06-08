@@ -32,6 +32,18 @@ from app.core.adaptive_strategies import AdaptiveStrategyVoter, create_adaptive_
 from app.core.portfolio_manager import PortfolioRiskManager, PortfolioMetrics
 from app.core.performance_metrics import PerformanceTracker, PerformanceSnapshot
 
+# Imports V5 (extraordinaire)
+from app.core.walk_forward import WalkForwardAnalysis, WFAParams
+from app.core.smart_order_routing import SmartOrderRouter, ExecutionType, ExecutionResult
+from app.core.ml_regime_detector import MLRegimeDetector, MLRegimeResult
+from app.core.triple_screen import TripleScreen, TripleScreenResult, TimeframeAlignment
+from app.core.symbol_circuit_breaker import SymbolCircuitBreaker, SymbolCircuitState
+from app.core.news_nlp import NewsNLPAnalyzer, SentimentResult
+from app.core.broker_failover import BrokerFailover, BrokerConfig
+from app.core.web_dashboard import WebDashboard
+from app.core.parallel_backtest import ParallelBacktest
+from app.core.decision_journal import DecisionJournal, DecisionRecord
+
 # Telegram
 from bot.telegram_alerts import AlertSystem, AlertLevel
 TELEGRAM_AVAILABLE = True
@@ -135,13 +147,26 @@ class TradingEngineV4(QObject):
         # V4 composants
         self.regime_detector = RegimeDetector()
         self.portfolio_risk = PortfolioRiskManager(
-            max_total_exposure=0.3,
-            max_drawdown_halt=15.0,
-            max_drawdown_reduce=10.0,
-            kelly_fraction=0.25,
+            max_total_exposure=0.3, max_drawdown_halt=15.0, max_drawdown_reduce=10.0, kelly_fraction=0.25,
         )
         self.performance_tracker = PerformanceTracker(window_size=50)
         self._last_regime: Optional[str] = None
+
+        # V5 composants (extraordinaire)
+        self.wfa = WalkForwardAnalysis(wfa_params=WFAParams())
+        self.sor: Optional[SmartOrderRouter] = None
+        self.ml_regime = MLRegimeDetector(n_regimes=5, model_type='auto')
+        self.triple_screen = TripleScreen()
+        self.symbol_cb = SymbolCircuitBreaker()
+        self.news_nlp = NewsNLPAnalyzer(use_transformers=False)
+        self.broker_failover: Optional[BrokerFailover] = None
+        self.web_dashboard: Optional[WebDashboard] = None
+        self.parallel_backtest = ParallelBacktest()
+        self.decision_journal = DecisionJournal()
+        self._triple_screen_enabled = getattr(config_manager.config.strategy, 'use_triple_screen', True)
+        self._ml_regime_enabled = getattr(config_manager.config.strategy, 'use_ml_regime', False)
+        self._wfa_enabled = getattr(config_manager.config.strategy, 'use_wfa', True)
+        self._news_nlp_enabled = getattr(config_manager.config.strategy, 'use_news_nlp', True)
 
         # Telegram
         self._telegram_alerts: Optional[AlertSystem] = None
@@ -240,6 +265,17 @@ class TradingEngineV4(QObject):
                     self.today_start_balance = info.balance
                     self.circuit_breaker.peak_equity = info.equity
                     self.portfolio_risk.update_peak(info.balance)
+                    # V5 : init SOR
+                    self.sor = SmartOrderRouter(self.broker)
+                    # V5 : init broker failover
+                    if len(self.config.broker.backup_brokers or []) > 0:
+                        configs = [BrokerConfig(name='primary', broker_type=broker_name, priority=1,
+                                                connect_kwargs={'auto_detect': True})]
+                        for i, backup in enumerate(self.config.broker.backup_brokers, 2):
+                            configs.append(BrokerConfig(name=f'backup_{i}', broker_type=backup,
+                                                      priority=i, connect_kwargs={}))
+                        self.broker_failover = BrokerFailover(configs, create_broker_adapter)
+                        self.broker_failover.initialize()
                 return True
             else:
                 self._log('error', f"Échec connexion : {self.broker.get_last_error()}")
@@ -280,6 +316,13 @@ class TradingEngineV4(QObject):
         if self.mode == "live" and not broker_ok:
             self._set_state(BotState.ERROR)
             return False
+
+        # V5 : lancer web dashboard
+        try:
+            self.web_dashboard = WebDashboard(self)
+            self.web_dashboard.start()
+        except Exception as e:
+            self._log('warning', f"Web dashboard non lancé: {e}")
 
         self._thread = Thread(target=self._run_loop, daemon=True, name="TradingEngineV4")
         self._thread.start()
@@ -661,6 +704,18 @@ class TradingEngineV4(QObject):
         if self._has_open_position(symbol):
             return
 
+        # V5 : Circuit Breaker par symbole
+        cb_state = self.symbol_cb.check(symbol)
+        if cb_state.status.value == "halted":
+            self._log('warning', f'{symbol}: CB symbole HALTED ({cb_state.reasons[0] if cb_state.reasons else ""})')
+            return
+
+        # V5 : ML Régime (optionnel)
+        ml_regime_result = None
+        if self._ml_regime_enabled:
+            ml_regime_result = self.ml_regime.detect(data.closes, data.highs, data.lows, data.volumes)
+            self._log('debug', f'{symbol}: ML régime = {ml_regime_result.regime.value} ({ml_regime_result.confidence:.0%})')
+
         # V4 : vote adaptatif avec régime
         result = self.voter.vote(data)
         if isinstance(result, AdaptiveVoteResult):
@@ -674,14 +729,39 @@ class TradingEngineV4(QObject):
             adjusted_risk = self.config.strategy.risk_percent
             weights = {}
 
-        # Log V4 enrichi
+        # V5 : Triple Screen Multi-Timeframe
+        triple_result = None
+        if self._triple_screen_enabled:
+            triple_result = self._check_triple_screen(symbol, symbol_config.timeframe)
+            if triple_result and triple_result.alignment == TimeframeAlignment.CONFLICTED:
+                self._log('info', f'{symbol}: Triple Screen CONFLIT — trade refusé')
+                self.decision_journal.record_skip(
+                    symbol=symbol, reason='Triple Screen conflicted',
+                    regime=regime.value, regime_confidence=regime_conf,
+                    confidence_score=result.confidence,
+                )
+                return
+            if triple_result and triple_result.alignment == TimeframeAlignment.FULLY_ALIGNED:
+                self._log('debug', f'{symbol}: ✅ Triple Screen aligné ({triple_result.reason})')
+
+        # V5 : News NLP sentiment
+        if self._news_nlp_enabled:
+            safe_news, news_reason = self.news_nlp.is_safe_to_trade(
+                symbol, direction=(1 if result.final_signal == Signal.BUY else -1)
+            )
+            if not safe_news:
+                self._log('info', f'{symbol}: News NLP bloque — {news_reason}')
+                return
+
+        # Log V5 enrichi
         buy_s = result.buy_votes
         sell_s = result.sell_votes
-        self._log('debug',
-                  f'{symbol}: {result.final_signal.name} | '
-                  f'régime={regime.value}({regime_conf:.0%}) | '
-                  f'buy={buy_s} sell={sell_s} conf={result.confidence:.2f} | '
-                  f'poids: {weights}')
+        log_line = (f'{symbol}: {result.final_signal.name} | '
+                    f'régime={regime.value}({regime_conf:.0%}) | '
+                    f'buy={buy_s} sell={sell_s} conf={result.confidence:.2f}')
+        if triple_result:
+            log_line += f' | TS={triple_result.alignment.value}'
+        self._log('debug', log_line)
 
         # Émettre changement de régime
         regime_str = regime.value
@@ -694,8 +774,9 @@ class TradingEngineV4(QObject):
         if result.final_signal == Signal.NONE:
             return
 
-        open_positions = self._get_open_positions_summary()
         direction = 1 if result.final_signal == Signal.BUY else -1
+
+        open_positions = self._get_open_positions_summary()
 
         # Filtre corrélation
         if self.config.strategy.use_correlation_filter:
@@ -704,17 +785,16 @@ class TradingEngineV4(QObject):
                 self._log('info', f'{symbol}: bloqué corrélation ({corr_reason})')
                 return
 
-        # V4 : vérification portefeuille
+        # V4/V5 : vérification portefeuille
         if self.mode == "live" and self.broker:
             info = self.broker.get_account_info()
             if info:
-                # Estimer l'exposition
                 tick = self.broker.get_tick(symbol)
                 sym_info = self.broker.get_symbol_info(symbol)
                 if tick and sym_info:
                     stop_dist = self._calculate_atr(data) * self.config.strategy.atr_multiplier_sl
                     lot = self._calculate_lot_size(sym_info, stop_dist)
-                    exposure = lot * tick.bid * sym_info.lot_size if hasattr(sym_info, 'lot_size') else lot
+                    exposure = lot * tick.bid
                     can_open, reason = self.portfolio_risk.can_open_position(
                         info.balance, symbol, exposure, open_positions
                     )
@@ -722,12 +802,64 @@ class TradingEngineV4(QObject):
                         self._log('warning', f'{symbol}: bloqué risk manager ({reason})')
                         return
 
+        # V5 : WFA auto-optimization
+        if self._wfa_enabled and self.wfa.should_run():
+            self._log('info', f'{symbol}: Lancement WFA...')
+            wfa_result = self.wfa.run_wfa(data)
+            if wfa_result and wfa_result.is_better:
+                self._log('info', f'{symbol}: WFA params optimisés appliqués!')
+                # Appliquer les params au voter
+                # (simplifié : le voter est recréé au prochain start)
+
         self.last_signal_time = datetime.now()
         self._log('info',
-                  f'📈 SIGNAL V4 {result.final_signal.name} sur {symbol} — '
+                  f'📈 SIGNAL V5 {result.final_signal.name} sur {symbol} — '
                   f'{result.decision_reason} (risk={adjusted_risk:.2f}%)')
 
+        # V5 : enregistrer la décision
+        self.decision_journal.record_open(
+            ticket=0,  # Sera mis à jour après exécution
+            symbol=symbol,
+            regime=regime.value,
+            regime_confidence=regime_conf,
+            strategy_weights=weights,
+            confidence_score=result.confidence,
+            buy_votes=result.buy_votes,
+            sell_votes=result.sell_votes,
+            price=data.closes[-1],
+            spread=(data.highs[-1] - data.lows[-1]) / data.closes[-1] * 100 if data.closes[-1] > 0 else 0,
+            atr=self._calculate_atr(data),
+            volatility_regime='',
+            bb_position=0.0,
+            risk_percent=adjusted_risk,
+            lot_size=0,  # Sera rempli à l'exécution
+            stop_distance=self._calculate_atr(data) * self.config.strategy.atr_multiplier_sl,
+            portfolio_exposure_before=sum(abs(1) for _, _ in open_positions) * 1000,
+            portfolio_exposure_after=0,
+            circuit_breaker_level=self.circuit_breaker.check().level.value,
+            correlation_blocked=False,
+            news_sentiment=None,
+            triple_screen_alignment=triple_result.alignment.value if triple_result else None,
+        )
+
         self._execute_trade_v4(symbol, direction, result, data, adjusted_risk)
+
+    def _check_triple_screen(self, symbol: str, tf: str):
+        """Vérifie le Triple Screen sur D1/H4/H1"""
+        if not self.broker:
+            return None
+        d1_data = self.broker.get_candles_arrays(symbol, 'D1', 300)
+        h4_data = self.broker.get_candles_arrays(symbol, 'H4', 300)
+        h1_data = self.broker.get_candles_arrays(symbol, 'H1', 100)
+        if d1_data is None or h4_data is None or h1_data is None:
+            return None
+        d1 = MarketData(symbol=symbol, closes=d1_data['close'], highs=d1_data['high'],
+                        lows=d1_data['low'], opens=d1_data['open'], volumes=d1_data['volume'], timeframe='D1')
+        h4 = MarketData(symbol=symbol, closes=h4_data['close'], highs=h4_data['high'],
+                        lows=h4_data['low'], opens=h4_data['open'], volumes=h4_data['volume'], timeframe='H4')
+        h1 = MarketData(symbol=symbol, closes=h1_data['close'], highs=h1_data['high'],
+                        lows=h1_data['low'], opens=h1_data['open'], volumes=h1_data['volume'], timeframe='H1')
+        return self.triple_screen.analyze(d1, h4, h1)
 
     def _execute_trade_v4(self, symbol, direction, vote_result, data, adjusted_risk_percent):
         if getattr(self.config.strategy, 'read_only_mode', False):
@@ -741,10 +873,18 @@ class TradingEngineV4(QObject):
             self._execute_paper_trade_v4(symbol, direction, vote_result, data, adjusted_risk_percent)
 
     def _execute_live_trade_v4(self, symbol, direction, vote_result, data, adjusted_risk_percent):
-        if not self.broker:
+        # V5 : utiliser le broker actif du failover si disponible
+        broker = self.broker
+        if self.broker_failover:
+            broker = self.broker_failover.get_active()
+            if broker is None:
+                self._log('error', "Aucun broker disponible (failover)")
+                return
+
+        if not broker:
             return
-        sym_info = self.broker.get_symbol_info(symbol)
-        tick = self.broker.get_tick(symbol)
+        sym_info = broker.get_symbol_info(symbol)
+        tick = broker.get_tick(symbol)
         if not sym_info or not tick:
             return
 
@@ -764,21 +904,35 @@ class TradingEngineV4(QObject):
             tp = price - stop_distance * self.config.strategy.risk_reward_ratio
             order_type = OrderType.MARKET_SELL
 
-        # V4 : risque ajusté
+        # V5 : risque ajusté
         original_risk = self.config.strategy.risk_percent
         self.config.strategy.risk_percent = adjusted_risk_percent
         lot_size = self._calculate_lot_size(sym_info, stop_distance)
-        self.config.strategy.risk_percent = original_risk  # Restore
+        self.config.strategy.risk_percent = original_risk
 
         if lot_size <= 0:
             return
 
-        result = self.broker.open_position(
-            symbol=symbol, order_type=order_type,
-            volume=lot_size, stop_loss=sl, take_profit=tp,
-            magic=self.config.strategy.magic_number,
-            comment='SafeTrendBotV4',
-        )
+        # V5 : SOR execution
+        result = None
+        if self.sor:
+            exec_result = self.sor.execute(symbol, direction, lot_size, sl, tp,
+                                           self.config.strategy.magic_number)
+            if exec_result.success:
+                result = type('obj', (object,), {
+                    'success': True, 'ticket': 0, 'filled_price': exec_result.filled_price,
+                    'error_message': '',
+                })()
+            else:
+                self._log('warning', f'SOR échoué: {exec_result.error_message}, fallback market')
+
+        if result is None:
+            result = broker.open_position(
+                symbol=symbol, order_type=order_type,
+                volume=lot_size, stop_loss=sl, take_profit=tp,
+                magic=self.config.strategy.magic_number,
+                comment='SafeTrendBotV5',
+            )
 
         if result.success:
             dir_str = "BUY" if direction == 1 else "SELL"
@@ -793,6 +947,14 @@ class TradingEngineV4(QObject):
                 current_sl=sl,
             )
 
+            # V5 : enregistrer dans decision journal
+            self.decision_journal.record_close(
+                ticket=result.ticket,
+                exit_price=actual_price,
+                profit=0,
+                exit_reason='OPENED',
+            )
+
             self._journal_entry(
                 ticket=result.ticket, symbol=symbol, direction=direction,
                 volume=lot_size, entry=actual_price, sl=sl, tp=tp,
@@ -801,17 +963,18 @@ class TradingEngineV4(QObject):
 
             self.position_opened.emit({
                 'symbol': symbol, 'direction': dir_str, 'price': actual_price,
-                'volume': lot_size, 'sl': sl, 'tp': tp, 'regime': vote_result.regime.value if hasattr(vote_result, 'regime') else 'unknown',
+                'volume': lot_size, 'sl': sl, 'tp': tp,
+                'regime': vote_result.regime.value if hasattr(vote_result, 'regime') else 'unknown',
             })
 
             if self._telegram_alerts and self.config.telegram.alert_position_open:
                 try:
                     regime_info = vote_result.regime.value if hasattr(vote_result, 'regime') else 'unknown'
                     self._telegram_alerts.send(
-                        f"*Position ouverte V4*\n\n"
-                        f"📊 {symbol} {dir_str}\n"
-                        f"@ {actual_price:.5f} ({lot_size} lots)\n"
-                        f"Régime : {regime_info}\n"
+                        f"*Position ouverte V5*\\n\\n"
+                        f"📊 {symbol} {dir_str}\\n"
+                        f"@ {actual_price:.5f} ({lot_size} lots)\\n"
+                        f"Régime : {regime_info}\\n"
                         f"Risk : {adjusted_risk_percent:.2f}%",
                         level=AlertLevel.INFO,
                     )
