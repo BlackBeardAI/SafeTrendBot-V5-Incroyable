@@ -20,6 +20,15 @@ from app.core.web_dashboard import WebDashboard
 from app.core.parallel_backtest import ParallelBacktest, BacktestResult
 from app.core.decision_journal import DecisionJournal, DecisionRecord
 
+# V5.2 — Ultra
+from app.core.prop_firm import PropFirmManager, PropFirmRules
+from app.core.risk_off_manager import RiskOffManager, EconomicEvent
+from app.core.auto_reporting import AutoReporting, WeeklyReport
+from app.core.multi_account import MultiAccountManager, AccountConfig
+from app.core.slippage_learner import SlippageLearner, SlippageProfile
+from app.core.auto_hedge import AutoHedge, HedgeRecommendation
+from app.core.voice_alerts import VoiceAlertManager
+
 __all__ = [
     'RegimeDetector', 'MarketRegime', 'RegimeResult',
     'AdaptiveStrategyVoter', 'create_adaptive_voter', 'AdaptiveVoteResult',
@@ -27,7 +36,7 @@ __all__ = [
     'PerformanceTracker', 'PerformanceSnapshot',
     'TradingEngineV4', 'BotStatus', 'BotState',
     'SystemTrayManager',
-    # V5
+    # V5 Extraordinaire
     'WalkForwardAnalysis', 'WFAParams', 'WFAResult',
     'SmartOrderRouter', 'ExecutionType', 'ExecutionResult',
     'MLRegimeDetector', 'MLRegimeResult',
@@ -38,4 +47,12 @@ __all__ = [
     'WebDashboard',
     'ParallelBacktest', 'BacktestResult',
     'DecisionJournal', 'DecisionRecord',
+    # V5.2 Ultra
+    'PropFirmManager', 'PropFirmRules',
+    'RiskOffManager', 'EconomicEvent',
+    'AutoReporting', 'WeeklyReport',
+    'MultiAccountManager', 'AccountConfig',
+    'SlippageLearner', 'SlippageProfile',
+    'AutoHedge', 'HedgeRecommendation',
+    'VoiceAlertManager',
 ]
