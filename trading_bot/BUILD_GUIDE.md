@@ -1,96 +1,216 @@
-"""
-Guide de compilation SafeTrendBot V5 en .exe commercial
-=======================================================
+# Build SafeTrendBot — Binaires Cross-Platform
 
-OBJECTIF : transformer le projet Python en .exe standalone
-           avec le code critique compilé en binaire (illisible).
+## 🎯 Objectif
 
-PRÉREQUIS
----------
-1. Python 3.11 (la version la plus stable pour PyInstaller)
-2. pip install pyinstaller cython pyarmor
-3. Windows: Visual C++ Build Tools (pour Cython)
-   Linux: sudo apt-get install build-essential python3-dev
+Transformer SafeTrendBot en **binaires standalone** pour Windows, Linux et macOS — **aucun fichier .py visible** pour l'utilisateur final.
 
-ÉTAPES
-------
+---
 
-### 1. Compiler les fichiers critiques (optionnel mais RECOMMANDÉ)
+## 📦 Ce que vous obtenez
 
-Cela transforme license_manager.py, anti_tamper.py, trading_engine_v4.py
-en fichiers binaires .pyd (Windows) ou .so (Linux).
-Le code source devient illisible.
+Après build, le dossier `releases/` contient :
 
-    python compile_critical.py
+```
+releases/
+├── SafeTrendBot-v5.X.X-windows-x64.zip       ← Windows 10/11 (x64)
+├── SafeTrendBot-v5.X.X-linux-x64.tar.gz      ← Linux Ubuntu/Debian/Fedora
+├── SafeTrendBot-v5.X.X-macos-x64.tar.gz      ← macOS Intel
+└── SafeTrendBot-v5.X.X-macos-arm64.tar.gz    ← macOS Apple Silicon (M1/M2/M3)
+```
 
-Résultat: des fichiers comme license_manager.cpython-311-x86_64-linux-gnu.so
+Chaque archive contient :
+- `SafeTrendBot` — **Application GUI** (clic pour lancer)
+- `SafeTrendBotHeadless` — **Mode serveur** (terminal, VPS)
+- `README.md`, `INSTALLATION.md`
 
-### 2. Supprimer les sources Python critiques (AVANT distribution!)
+**Aucun Python requis. Aucun fichier source visible.**
 
-⚠️  NE PAS supprimer les .py du dossier source de développement!
-    Copiez d'abord le projet dans un dossier "dist_source" propre.
+---
 
-Dans le dossier de distribution:
+## 🔧 Prérequis
 
-    del app/core/license_manager.py
-    del app/core/anti_tamper.py
-    del app/core/trading_engine_v4.py
-    del app/core/adaptive_strategies.py
-    del app/core/regime_detector.py
-    del app/core/strategies.py
+### Option 1: Build Local (une seule plateforme)
 
-Gardez SEULEMENT les .pyd / .so générés à l'étape 1.
+```bash
+pip install pyinstaller cython pyarmor
+```
 
-### 3. Compiler l'application complète en .exe
+### Option 2: Build Multi-Plateforme (recommandé)
 
-    python build.py
+Utilisez **GitHub Actions** — build automatique pour Windows + Linux + macOS en parallèle.
 
-Ou manuellement:
+---
 
-    pyinstaller main.py \
-        --name SafeTrendBot \
-        --onefile \  # OU --onedir pour plus rapide
-        --windowed \  # Pas de console noire
-        --icon=icon.ico \
-        --add-data "app;app" \
-        --add-data "bot;bot" \
-        --hidden-import app.core.license_manager \
-        --hidden-import app.core.anti_tamper \
-        --hidden-import app.core.trading_engine_v4
+## 🚀 Build Rapide (Local)
 
-### 4. Résultat
+```bash
+cd trading_bot
+python build_release.py
+```
 
-Le .exe est dans: dist/SafeTrendBot.exe (ou dist/SafeTrendBot/SafeTrendBot.exe)
+Résultat dans `releases/` — une seule archive pour votre OS.
 
-Testez-le sur une machine SANS Python installé pour vérifier
-qu'il est vraiment standalone.
+---
 
-SÉCURITÉ
---------
-- Changez la SECRET_KEY dans license_manager.py AVANT compilation
-- Changez-la aussi dans server/activation_server.py
-- N'incluez JAMAIS vos vraies clés API dans le .exe
-- Utilisez des variables d'environnement pour les credentials
+## 🚀 Build Multi-Plateforme (GitHub Actions)
 
-ANTI-DÉCOMPILATION
-------------------
-Même en .exe, le code Python peut être extrait. Contre-mesures:
+### Méthode 1: Push un tag
 
-1. Cython (compile_critical.py) → code machine
-2. PyArmor (pip install pyarmor) → obfuscation supplémentaire
-3. UPX compression (inclus dans build.py) → rend l'analyse plus difficile
-4. Code signing (optionnel) → certificat Windows pour authenticité
+```bash
+git tag -a v5.3.0 -m "Release v5.3.0"
+git push origin v5.3.0
+```
 
-LIMITATIONS
------------
-Aucun système n'est inviolable. Un hacker motivé peut:
-- Dumper la mémoire du processus
-- Hooker les fonctions de vérification
-- Désassembler le .pyd compilé
+GitHub Actions compile automatiquement pour **Windows, Linux, macOS x64, macOS ARM64** et crée un Release avec les 4 archives.
 
-Mais le coût technique augmente énormément, dissuadant 99% des attaquants.
+### Méthode 2: Déclenchement manuel
 
-SUPPORT
--------
-Pour des questions: README.md ou contact@safetrendbot.com
-"""
+1. Allez sur GitHub → Actions → "Build SafeTrendBot Releases"
+2. Cliquez "Run workflow"
+3. Entrez la version (ex: `5.3.0`)
+4. Les binaires sont générés et attachés au workflow
+
+---
+
+## 🛡 Sécurité du Build
+
+### 1. Obfuscation Cython (automatique)
+
+Avant compilation, les fichiers critiques sont transformés en **code machine binaire** (.so / .pyd) :
+
+- `license_manager.py` → illisible
+- `anti_tamper.py` → illisible
+- `trading_engine_v4.py` → illisible
+- `extreme_guard.py` → illisible
+- `trading_profiles.py` → illisible
+
+### 2. Compilation PyInstaller
+
+Le binaire final est un **fichier unique** contenant :
+- L'interpréteur Python embarqué
+- Toutes les dépendances
+- Le code obfusqué
+- **AUCUN** fichier .py visible
+
+### 3. Anti-Tamper intégré
+
+Le binaire vérifie au démarrage :
+- Débogueur présent ? → Arrêt
+- Machine virtuelle ? → Arrêt
+- Fichiers modifiés ? → Arrêt
+
+---
+
+## 📋 Installation pour l'utilisateur final
+
+### Windows
+1. Télécharger `SafeTrendBot-v*-windows-x64.zip`
+2. Extraire le ZIP
+3. Double-cliquer `SafeTrendBot.exe`
+4. Aucune installation requise
+
+### Linux
+```bash
+# Télécharger
+curl -L -o safetrendbot.tar.gz https://github.com/BlackBeardAI/SafeTrendBot-V5-Incroyable/releases/latest/download/SafeTrendBot-v5-linux-x64.tar.gz
+
+# Extraire
+tar -xzf safetrendbot.tar.gz
+cd SafeTrendBot-v5-linux-x64
+
+# Lancer GUI
+chmod +x SafeTrendBot
+./SafeTrendBot
+
+# OU mode serveur
+chmod +x SafeTrendBotHeadless
+./SafeTrendBotHeadless --paper --symbols EURUSD,GBPUSD
+```
+
+### macOS (Intel)
+```bash
+tar -xzf SafeTrendBot-v5-macos-x64.tar.gz
+cd SafeTrendBot-v5-macos-x64
+chmod +x SafeTrendBot
+./SafeTrendBot
+```
+
+### macOS (Apple Silicon M1/M2/M3)
+```bash
+tar -xzf SafeTrendBot-v5-macos-arm64.tar.gz
+cd SafeTrendBot-v5-macos-arm64
+chmod +x SafeTrendBot
+./SafeTrendBot
+```
+
+Si Gatekeeper bloque : **Clic droit → Ouvrir** (une fois autorisé, ça fonctionne pour toujours).
+
+---
+
+## 🔒 Protection commerciale
+
+### Licence requise
+
+Chaque binaire nécessite une **licence valide** au premier démarrage :
+
+1. L'utilisateur achète sur votre site
+2. Il reçoit une **clé de licence** (format: `XXXX-XXXX-XXXX-XXXX`)
+3. Il entre la clé dans le bot → activation automatique
+4. La licence est **liée au hardware** (impossible de partager)
+
+### Serveur d'activation
+
+Vous devez héberger le serveur d'activation :
+
+```bash
+cd server
+pip install -r requirements.txt
+export SAFETRENDBOT_SECRET="votre_secret"
+python activation_server.py
+```
+
+### 7 jours d'essai gratuit
+
+Par défaut, chaque nouveau bot a **7 jours d'essai** sans licence.
+
+---
+
+## 🧪 Tester le binaire
+
+Vérifiez que le binaire est vraiment standalone :
+
+```bash
+# Sur une machine VIERGE (sans Python installé)
+./SafeTrendBot --version
+```
+
+Si ça affiche la version → ✅ Le binaire est standalone.
+
+---
+
+## 📊 Tailles attendues
+
+| Plateforme | GUI | Headless |
+|------------|-----|----------|
+| Windows | ~180-250 MB | ~150-200 MB |
+| Linux | ~160-220 MB | ~130-180 MB |
+| macOS | ~170-240 MB | ~140-190 MB |
+
+La taille inclut l'interpréteur Python + PyQt6 + numpy + toutes les dépendances.
+
+---
+
+## 🆘 Dépannage
+
+### "SafeTrendBot.exe ne se lance pas"
+→ Windows Defender peut bloquer. Ajoutez une exception.
+
+### "cannot find libpython" sur Linux
+→ Installez `libpython3.11` : `sudo apt-get install libpython3.11`
+
+### Gatekeeper macOS
+→ `xattr -cr SafeTrendBot` pour supprimer les attributs quarantaine.
+
+---
+
+**Pour toute question: README.md ou contact@safetrendbot.com**
