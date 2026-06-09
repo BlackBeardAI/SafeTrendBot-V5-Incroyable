@@ -43,6 +43,8 @@ from app.core.broker_failover import BrokerFailover, BrokerConfig
 from app.core.web_dashboard import WebDashboard
 from app.core.parallel_backtest import ParallelBacktest
 from app.core.decision_journal import DecisionJournal, DecisionRecord
+from app.core.trading_profiles import TradingMode
+from app.core.extreme_guard import ExtremeGuard
 
 # Telegram
 from bot.telegram_alerts import AlertSystem, AlertLevel
@@ -171,6 +173,11 @@ class TradingEngineV4(QObject):
         # Telegram
         self._telegram_alerts: Optional[AlertSystem] = None
         self._last_daily_report_date = None
+
+        # EXTREME mode guard (sécurités supplémentaires)
+        self.extreme_guard: Optional[ExtremeGuard] = None
+        self._init_extreme_guard()
+
         self._reload_telegram()
         self._setup_logger()
 
@@ -200,6 +207,79 @@ class TradingEngineV4(QObject):
     def _log(self, level: str, message: str):
         getattr(self.logger, level.lower(), self.logger.info)(message)
         self.log_message.emit(level, message)
+
+    # ========================================================================
+    # EXTREME GUARD — Initialisation et intégration
+    # ========================================================================
+
+    def _init_extreme_guard(self):
+        """Initialise le ExtremeGuard si le profil actif est EXTREME."""
+        active = self.config.strategy.active_profile
+        if active != 'extreme':
+            self.extreme_guard = None
+            return
+        from app.core.trading_profiles import get_profile
+        profile = get_profile('extreme')
+        if profile.mode != TradingMode.EXTREME:
+            return
+        state_dir = Path(config_manager.app_data_dir) / 'guard'
+        self.extreme_guard = ExtremeGuard.from_profile(profile, state_dir=state_dir)
+        self._log('warning', '🔥🔥 EXTREME MODE ACTIVÉ — Sécurités en place')
+
+    def _is_extreme_locked(self) -> bool:
+        """Vérifie si le mode EXTREME est verrouillé."""
+        if not self.extreme_guard:
+            return False
+        if self.extreme_guard.state.is_locked:
+            reason = self.extreme_guard.state.lock_reason
+            self._log('error', f'🔒 EXTREME LOCKED: {reason}')
+            return True
+        return False
+
+    def _extreme_can_trade(self) -> bool:
+        """Vérifie les sécurités EXTREME avant chaque trade."""
+        if not self.extreme_guard:
+            return True
+        # Calcul du PnL journalier en %
+        daily_pnl_pct = 0.0
+        if self.mode == "live" and self.broker:
+            info = self.broker.get_account_info()
+            if info and self.today_start_balance > 0:
+                daily_pnl_pct = ((info.balance - self.today_start_balance) / self.today_start_balance) * 100
+        elif self.mode == "paper":
+            balance = self.paper_engine.balance
+            if self.today_start_balance > 0:
+                daily_pnl_pct = ((balance - self.today_start_balance) / self.today_start_balance) * 100
+
+        current_balance = self._get_current_balance()
+        ok = self.extreme_guard.can_trade(current_balance, daily_pnl_pct)
+        if not ok:
+            reason = self.extreme_guard.last_reason
+            if reason:
+                self._log('error', f'🚫 EXTREME BLOCK: {reason}')
+        return ok
+
+    def _extreme_on_trade_opened(self):
+        """Notifie le guard qu'un trade est ouvert."""
+        if self.extreme_guard:
+            self.extreme_guard.on_trade_opened()
+
+    def _extreme_on_trade_closed(self, realized_pnl: float):
+        """Notifie le guard qu'un trade est fermé."""
+        if self.extreme_guard:
+            balance = self._get_current_balance()
+            self.extreme_guard.on_trade_closed(realized_pnl, balance)
+            if self.extreme_guard.state.is_locked:
+                reason = self.extreme_guard.state.lock_reason
+                self._log('critical', f'🔒 EXTREME AUTO-LOCKED: {reason}')
+                self._alert_telegram(f'🔒 EXTREME LOCKED\n{reason}\n\nRecharge manuelle requise.')
+
+    def _get_current_balance(self) -> float:
+        """Retourne le solde actuel (live ou paper)."""
+        if self.mode == "live" and self.broker:
+            info = self.broker.get_account_info()
+            return info.balance if info else 0.0
+        return self.paper_engine.balance
 
     # ========================================================================
     # BROKER (identique V3)
@@ -669,6 +749,10 @@ class TradingEngineV4(QObject):
                 self.circuit_breaker.record_win()
             else:
                 self.circuit_breaker.record_loss()
+
+            # EXTREME guard: notifie la fermeture
+            self._extreme_on_trade_closed(trade.profit)
+
             self.journal.record_exit(
                 ticket=trade.ticket, exit_price=trade.exit_price or 0,
                 exit_reason=trade.exit_reason, profit=trade.profit,
@@ -940,6 +1024,9 @@ class TradingEngineV4(QObject):
             self._log('info', f'{dir_str} {symbol} @ {actual_price:.5f} ({lot_size} lots, risk={adjusted_risk_percent:.2f}%)')
             self.today_trades += 1
 
+            # EXTREME guard: notifie l'ouverture
+            self._extreme_on_trade_opened()
+
             self.managed_positions[result.ticket] = ManagedPositionInfo(
                 ticket=result.ticket, symbol=symbol, direction=direction,
                 entry_price=actual_price,
@@ -1015,6 +1102,9 @@ class TradingEngineV4(QObject):
         )
         self.today_trades += 1
 
+        # EXTREME guard: notifie l'ouverture (paper)
+        self._extreme_on_trade_opened()
+
         self._journal_entry(
             ticket=trade.ticket, symbol=symbol, direction=direction,
             volume=lot_size, entry=price, sl=sl, tp=tp,
@@ -1055,6 +1145,12 @@ class TradingEngineV4(QObject):
         )
 
     def _is_safe_to_trade(self, symbol, data):
+        # EXTREME guard check
+        if self._is_extreme_locked():
+            return False
+        if not self._extreme_can_trade():
+            return False
+
         if self.circuit_breaker.consecutive_losses >= self.config.strategy.max_consecutive_losses:
             return False
         if self.mode == "live" and self.today_start_balance > 0 and self.broker:

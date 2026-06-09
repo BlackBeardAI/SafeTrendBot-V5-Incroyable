@@ -44,19 +44,30 @@ class StrategyParams:
     magic_number: int = 20260416
 
     # Profil actif et paramètres dérivés
-    active_profile: str = "normal"  # safe, normal, aggressive, trend_pure, etc.
+    active_profile: str = "normal"  # safe, normal, aggressive, extreme, trend_pure, etc.
     risk_per_trade: float = 1.0
     max_positions: int = 3
     daily_loss_limit_pct: float = 3.0
     max_drawdown_pct: float = 15.0
-    min_strategies_agreement: int = 1   # 1 suffit (Normal), était 2
-    min_confidence: float = 0.40        # 40 % au lieu de 50 %
-    use_volatility_filter: bool = False  # Désactivé par défaut
+    min_strategies_agreement: int = 1
+    min_confidence: float = 0.40
+    use_volatility_filter: bool = False
     use_correlation_filter: bool = False
     use_news_filter: bool = False
     enable_trailing_stop: bool = True
     enable_breakeven: bool = True
-    read_only_mode: bool = False  # Si True, le bot analyse mais ne trade pas
+    read_only_mode: bool = False
+
+    # ═══════════════════════════════════════════════════════════════
+    # EXTREME MODE — Sécurités supplémentaires
+    # ═══════════════════════════════════════════════════════════════
+    extreme_pin: str = "0000"                      # PIN pour activer EXTREME
+    extreme_max_consecutive_losses: int = 3
+    extreme_max_trades_per_day: int = 15
+    extreme_time_limit_hours: int = 48
+    extreme_cooldown_min: int = 5
+    extreme_leverage_cap: float = 3.0
+    extreme_enable_circuit_breaker: bool = True
 
 
 @dataclass

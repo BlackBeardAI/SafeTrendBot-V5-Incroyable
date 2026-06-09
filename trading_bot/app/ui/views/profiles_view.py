@@ -1,11 +1,11 @@
 """
 Vue de sélection du profil de trading.
-Permet de choisir entre Safe / Normal / Aggressive et 3 stratégies pures.
+Permet de choisir entre Safe / Normal / Aggressive / EXTREME et 3 stratégies pures.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox,
-    QFrame, QScrollArea, QGridLayout
+    QFrame, QScrollArea, QGridLayout, QLineEdit, QInputDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -30,7 +30,7 @@ class ProfileCard(QFrame):
         self.profile_id = profile_id
         self.is_active = is_active
         self.setObjectName("ProfileCard")
-        self.setMinimumHeight(280)
+        self.setMinimumHeight(320)
         self._build()
 
     def _build(self):
@@ -39,6 +39,7 @@ class ProfileCard(QFrame):
             TradingMode.SAFE: '#10b981',        # Vert
             TradingMode.NORMAL: '#2563eb',      # Bleu
             TradingMode.AGGRESSIVE: '#ef4444',  # Rouge
+            TradingMode.EXTREME: '#7c3aed',     # Violet 🔥🔥
         }
         border_color = mode_colors.get(self.profile.mode, '#6b7280')
 
@@ -111,9 +112,34 @@ class ProfileCard(QFrame):
 
         layout.addLayout(metrics_layout)
 
+        # Sécurités EXTREME
+        if self.profile.mode == TradingMode.EXTREME:
+            sec_layout = QGridLayout()
+            sec_layout.setSpacing(4)
+            secs = [
+                ("Max pertes consécutives", str(self.profile.max_consecutive_losses)),
+                ("Max trades/jour", str(self.profile.max_trades_per_day)),
+                ("Cooldown", f"{self.profile.cooldown_between_trades_min} min"),
+                ("Levier max", f"x{self.profile.leverage_cap}"),
+                ("Auto-off", f"{self.profile.time_limit_hours}h"),
+            ]
+            for i, (label, value) in enumerate(secs):
+                row, col = divmod(i, 2)
+                l = QLabel(f"{label} :")
+                l.setFont(QFont("Segoe UI", 8))
+                l.setStyleSheet(f"color: #a855f7;")
+                v = QLabel(value)
+                v.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
+                v.setStyleSheet(f"color: #a855f7;")
+                sec_layout.addWidget(l, row, col * 2)
+                sec_layout.addWidget(v, row, col * 2 + 1)
+            layout.addLayout(sec_layout)
+
         # Avertissements importants
         if self.profile.warnings:
-            warn_text = "\n".join(f"• {w}" for w in self.profile.warnings)
+            warn_text = "\n".join(f"• {w}" for w in self.profile.warnings[:4])
+            if len(self.profile.warnings) > 4:
+                warn_text += f"\n• ... ({len(self.profile.warnings) - 4} avertissements supplémentaires)"
             warn_label = QLabel(warn_text)
             warn_label.setWordWrap(True)
             warn_label.setFont(QFont("Segoe UI", 8))
@@ -175,23 +201,26 @@ class TradingProfilesView(QWidget):
             "et la STRATÉGIE utilisée. Aucun profil ne garantit un gain.\n\n"
             "<b>Recommandation :</b> commencez TOUJOURS par 'Safe' en mode Paper Trading "
             "pendant 2-3 semaines avant de passer en réel ou en mode plus agressif.\n\n"
-            "<b>Important :</b> les profils 'Aggressive' et 'pure' (Trend/MeanRev/Breakout) "
+            "<b>Important :</b> les profils 'Aggressive', 'EXTREME' et 'pure' "
             "sont réservés aux utilisateurs expérimentés. Ils peuvent générer des pertes "
-            "importantes en conditions de marché défavorables."
+            "importantes en conditions de marché défavorables.\n\n"
+            "<b>🔥🔥 EXTREME :</b> Mode à haut risque avec sécurités automatiques. "
+            "PIN requis. Désactivation auto après 48h."
         )
         warning_text.setWordWrap(True)
         warning_text.setTextFormat(Qt.TextFormat.RichText)
         warning.add_widget(warning_text)
         layout.addWidget(warning)
 
-        # Section : 3 modes de risque
-        modes_card = Card("3 modes de risque (recommandés)")
+        # Section : 4 modes de risque
+        modes_card = Card("4 modes de risque (recommandés)")
         modes_grid = QGridLayout()
         modes_grid.setSpacing(12)
 
         active_id = config_manager.config.strategy.active_profile
 
-        for i, profile_id in enumerate(['safe', 'normal', 'aggressive']):
+        risk_modes = ['safe', 'normal', 'aggressive', 'extreme']
+        for i, profile_id in enumerate(risk_modes):
             profile = get_profile(profile_id)
             card = ProfileCard(
                 profile, profile_id,
@@ -225,8 +254,50 @@ class TradingProfilesView(QWidget):
     def _activate_profile(self, profile_id: str):
         profile = get_profile(profile_id)
 
-        # Si profil agressif, demander confirmation
-        if profile.mode == TradingMode.AGGRESSIVE:
+        # ─── EXTREME MODE : Double confirmation + PIN ───
+        if profile.mode == TradingMode.EXTREME:
+            # Étape 1 : Avertissement avec checkbox
+            warnings_str = "\n".join(profile.warnings)
+            reply = QMessageBox.critical(
+                self,
+                "🔥🔥 ACTIVATION EXTREME — CONFIRMATION FINALE",
+                f"Vous activez le mode {profile.name}.\n\n"
+                f"{'='*50}\n"
+                f"{warnings_str}\n"
+                f"{'='*50}\n\n"
+                f"Ce mode est CONÇU pour maximiser les rendements à COURT TERME.\n"
+                f"Votre compte peut perdre jusqu'à 30% AVANT l'arrêt automatique.\n\n"
+                f"Êtes-vous ABSOLUMENT SÛR ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            # Étape 2 : PIN requis
+            pin, ok = QInputDialog.getText(
+                self,
+                "PIN requis",
+                "Entrez le code PIN pour déverrouiller le mode EXTREME :\n"
+                "(Le PIN par défaut est '0000' — changez-le dans les paramètres)",
+                QLineEdit.EchoMode.Password
+            )
+            if not ok or not pin:
+                return
+
+            # Vérifier le PIN (stocké dans la config ou défaut)
+            expected_pin = getattr(
+                config_manager.config.strategy, 'extreme_pin', '0000'
+            )
+            if pin != expected_pin:
+                QMessageBox.critical(
+                    self, "PIN incorrect",
+                    "Le code PIN est incorrect. Mode EXTREME non activé."
+                )
+                return
+
+        # ─── AGGRESSIVE MODE : Confirmation simple ───
+        elif profile.mode == TradingMode.AGGRESSIVE:
             warnings_str = "\n".join(profile.warnings)
             reply = QMessageBox.warning(
                 self, "Confirmer le mode Aggressive",
@@ -239,7 +310,7 @@ class TradingProfilesView(QWidget):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        # Appliquer le profil à la config
+        # ─── Appliquer le profil à la config ───
         cfg = config_manager.config
         cfg.strategy.active_profile = profile_id
         cfg.strategy.risk_per_trade = profile.risk_per_trade_pct
@@ -255,6 +326,17 @@ class TradingProfilesView(QWidget):
         cfg.strategy.use_news_filter = profile.use_news_filter
         cfg.strategy.enable_trailing_stop = profile.enable_trailing_stop
         cfg.strategy.enable_breakeven = profile.enable_breakeven
+
+        # EXTREME : sécurités supplémentaires
+        if profile.mode == TradingMode.EXTREME:
+            cfg.strategy.extreme_pin = getattr(cfg.strategy, 'extreme_pin', '0000')
+            cfg.strategy.extreme_max_consecutive_losses = profile.max_consecutive_losses
+            cfg.strategy.extreme_max_trades_per_day = profile.max_trades_per_day
+            cfg.strategy.extreme_time_limit_hours = profile.time_limit_hours
+            cfg.strategy.extreme_cooldown_min = profile.cooldown_between_trades_min
+            cfg.strategy.extreme_leverage_cap = profile.leverage_cap
+            cfg.strategy.extreme_enable_circuit_breaker = profile.enable_circuit_breaker
+
         # Heures de trading : forex tourne 24h/5
         cfg.strategy.start_hour = 0
         cfg.strategy.end_hour = 24
