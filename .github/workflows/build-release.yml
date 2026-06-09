@@ -1,215 +1,110 @@
-name: Build SafeTrendBot Releases
+name: Build SafeTrendBot V5
 
 on:
   push:
-    branches: [main, release/*]
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g. 5.3.0)'
-        required: true
-        default: '5.3.0'
 
 jobs:
-  # ════════════════════════════════════════════════════════════════════════════
-  # BUILD WINDOWS x64
-  # ════════════════════════════════════════════════════════════════════════════
   build-windows:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: ./trading_bot
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller cython pyarmor
-          pip install -r requirements.txt
+          pip install pyinstaller cython
+          pip install -r trading_bot/requirements.txt
 
-      - name: Build GUI + Headless
+      - name: Build .exe
+        working-directory: ./trading_bot
         run: |
-          python build_release.py --version ${{ github.event.inputs.version || '5.3.0' }}
+          python -m PyInstaller main.py --name SafeTrendBot --onefile --windowed ^
+            --add-data "app;app" --add-data "bot;bot" ^
+            --hidden-import PyQt6.sip ^
+            --hidden-import numpy.core._dtype_ctypes ^
+            --hidden-import app.core.trading_engine_v4 ^
+            --hidden-import app.core.license_manager_v2 ^
+            --hidden-import app.core.anti_tamper ^
+            --hidden-import app.core.extreme_guard ^
+            --hidden-import app.core.encryption ^
+            --hidden-import app.core.watermark ^
+            --hidden-import app.core.auto_updater ^
+            --hidden-import app.core.broadcast_client ^
+            --hidden-import app.brokers.mt5_adapter ^
+            --hidden-import bot.telegram_alerts ^
+            --exclude-module matplotlib.tests ^
+            --exclude-module numpy.random._examples
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: trading_bot/releases/*.zip
+          name: SafeTrendBot-Windows
+          path: trading_bot/dist/SafeTrendBot.exe
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # BUILD LINUX x64
-  # ════════════════════════════════════════════════════════════════════════════
   build-linux:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./trading_bot
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install system dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3-dev libgl1
-
-      - name: Install Python dependencies
-        run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller cython pyarmor
-          pip install -r requirements.txt
-
-      - name: Build GUI + Headless
-        run: |
-          python build_release.py --version ${{ github.event.inputs.version || '5.3.0' }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build
-          path: trading_bot/releases/*.tar.gz
-
-  # ════════════════════════════════════════════════════════════════════════════
-  # BUILD macOS (x64 + ARM64)
-  # ════════════════════════════════════════════════════════════════════════════
-  build-macos-x64:
-    runs-on: macos-13  # Intel runner
-    defaults:
-      run:
-        working-directory: ./trading_bot
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller cython pyarmor
-          pip install -r requirements.txt
-
+          pip install pyinstaller cython
+          pip install -r trading_bot/requirements.txt
       - name: Build
-        run: |
-          python build_release.py --version ${{ github.event.inputs.version || '5.3.0' }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-x64-build
-          path: trading_bot/releases/*.tar.gz
-
-  build-macos-arm64:
-    runs-on: macos-14  # Apple Silicon runner (M1/M2)
-    defaults:
-      run:
         working-directory: ./trading_bot
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller cython pyarmor
-          pip install -r requirements.txt
-
-      - name: Build
-        run: |
-          python build_release.py --version ${{ github.event.inputs.version || '5.3.0' }}
-
-      - name: Upload artifacts
+          python -m PyInstaller main.py --name SafeTrendBot --onefile --windowed \
+            --add-data "app:app" --add-data "bot:bot" \
+            --hidden-import PyQt6.sip \
+            --hidden-import numpy.core._dtype_ctypes \
+            --hidden-import app.core.trading_engine_v4 \
+            --hidden-import app.core.license_manager_v2 \
+            --exclude-module matplotlib.tests \
+            --exclude-module numpy.random._examples
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-arm64-build
-          path: trading_bot/releases/*.tar.gz
+          name: SafeTrendBot-Linux
+          path: trading_bot/dist/SafeTrendBot
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # RELEASE — Créer un release GitHub avec tous les binaires
-  # ════════════════════════════════════════════════════════════════════════════
   release:
-    needs: [build-windows, build-linux, build-macos-x64, build-macos-arm64]
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: List artifacts
-        run: ls -lah artifacts/
-
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/*
-          generate_release_notes: true
           name: SafeTrendBot ${{ github.ref_name }}
           body: |
             ## SafeTrendBot ${{ github.ref_name }}
 
-            Binaires prêts à l'emploi pour toutes les plateformes :
+            **Build de base** — Utilisez avec `builder.py` pour injecter une licence unique.
 
-            | Plateforme | Fichier | Architecture |
-            |------------|---------|--------------|
-            | Windows | `SafeTrendBot-v*-windows-x64.zip` | x64 |
-            | Linux | `SafeTrendBot-v*-linux-x64.tar.gz` | x64 |
-            | macOS Intel | `SafeTrendBot-v*-macos-x64.tar.gz` | x64 |
-            | macOS Apple Silicon | `SafeTrendBot-v*-macos-arm64.tar.gz` | ARM64 |
+            | Plateforme | Fichier |
+            |------------|---------|
+            | Windows | `SafeTrendBot.exe` |
+            | Linux | `SafeTrendBot` |
 
-            Chaque archive contient :
-            - `SafeTrendBot.exe` (ou binaire sans extension)
-            - `SafeTrendBotHeadless.exe` (mode serveur)
-            - README.md, INSTALLATION.md
-
-            ### Installation rapide
-
-            **Windows:**
-            ```powershell
-            # Extraire le ZIP, double-cliquer SafeTrendBot.exe
-            ```
-
-            **Linux:**
+            **Pour les clients:**
             ```bash
-            tar -xzf SafeTrendBot-v*-linux-x64.tar.gz
-            cd SafeTrendBot-v*-linux-x64
-            chmod +x SafeTrendBot
-            ./SafeTrendBot
+            python builder.py --tier basic --email client@ex.com
             ```
-
-            **macOS:**
-            ```bash
-            tar -xzf SafeTrendBot-v*-macos-*.tar.gz
-            cd SafeTrendBot-v*-macos-*
-            chmod +x SafeTrendBot
-            ./SafeTrendBot
-            # Si Gatekeeper bloque: clic droit → Ouvrir
-            ```
-
-            ⚠️ **Avertissement** : le trading comporte des risques. Paper trade 30 jours minimum.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
