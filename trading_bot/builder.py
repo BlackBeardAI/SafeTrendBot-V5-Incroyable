@@ -52,6 +52,12 @@ ROOT = Path(__file__).parent
 BUILD_DIR = ROOT / "builds"
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
+# URL du dashboard admin — injectée dans chaque build pour connexion auto
+ADMIN_URL = os.environ.get(
+    "SAFETRENDBOT_ADMIN_URL",
+    "https://217.160.191.107:8443"  # VPS par défaut
+)
+
 TIER_CONFIG = {
     "basic": {"eur": 99, "usd": 109, "label": "Basic", "max_positions": 3, "risk": 1.0},
     "pro": {"eur": 199, "usd": 219, "label": "Pro", "max_positions": 5, "risk": 2.0},
@@ -146,6 +152,36 @@ MAX_POSITIONS = {tier_cfg['max_positions']}
 RISK_PER_TRADE = {tier_cfg['risk']}
 ''', encoding="utf-8")
     print(f"   ✅ Config tier injectée: {tier} ({tier_cfg['label']})")
+
+    # ─── INJECTION URL DASHBOARD ───
+    # Remplacer les URLs par défaut par l'URL admin configurée
+    for module_file in ["broadcast_client.py", "auto_updater.py", "main.py"]:
+        mod_path = src_dir / "app" / "core" / module_file
+        if not mod_path.exists():
+            mod_path = src_dir / module_file  # main.py est à la racine
+
+        if mod_path.exists():
+            content = mod_path.read_text(encoding="utf-8")
+            # Remplacer les URLs par défaut/fallback
+            replacements = [
+                ('BROADCAST_API_URL = os.environ.get("SAFETRENDBOT_BROADCAST_API", "")',
+                 f'BROADCAST_API_URL = os.environ.get("SAFETRENDBOT_BROADCAST_API", "{ADMIN_URL}")'),
+                ('BROADCAST_API_URL = ""',
+                 f'BROADCAST_API_URL = "{ADMIN_URL}"'),
+                ('UPDATE_SERVER = os.environ.get("SAFETRENDBOT_UPDATE_URL", "")',
+                 f'UPDATE_SERVER = os.environ.get("SAFETRENDBOT_UPDATE_URL", "{ADMIN_URL}")'),
+                ('UPDATE_SERVER = ""',
+                 f'UPDATE_SERVER = "{ADMIN_URL}"'),
+                ('ADMIN_DASHBOARD_URL = os.environ.get("SAFETRENDBOT_ADMIN_URL", "")',
+                 f'ADMIN_DASHBOARD_URL = os.environ.get("SAFETRENDBOT_ADMIN_URL", "{ADMIN_URL}")'),
+                ('ADMIN_DASHBOARD_URL = ""',
+                 f'ADMIN_DASHBOARD_URL = "{ADMIN_URL}"'),
+            ]
+            for old, new in replacements:
+                content = content.replace(old, new)
+            mod_path.write_text(content, encoding="utf-8")
+
+    print(f"   ✅ URL dashboard injectée: {ADMIN_URL}")
 
     return src_dir
 
