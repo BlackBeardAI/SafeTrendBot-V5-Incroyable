@@ -7,6 +7,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ./trading_bot
     steps:
       - uses: actions/checkout@v4
 
@@ -15,30 +18,27 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller cython
-          pip install -r trading_bot/requirements.txt
+          pip install -r requirements.txt
 
-      - name: Build .exe
-        working-directory: ./trading_bot
+      - name: Build .exe with PyInstaller
+        shell: pwsh
         run: |
-          python -m PyInstaller main.py --name SafeTrendBot --onefile --windowed ^
-            --add-data "app;app" --add-data "bot;bot" ^
-            --hidden-import PyQt6.sip ^
-            --hidden-import numpy.core._dtype_ctypes ^
-            --hidden-import app.core.trading_engine_v4 ^
-            --hidden-import app.core.license_manager_v2 ^
-            --hidden-import app.core.anti_tamper ^
-            --hidden-import app.core.extreme_guard ^
-            --hidden-import app.core.encryption ^
-            --hidden-import app.core.watermark ^
-            --hidden-import app.core.auto_updater ^
-            --hidden-import app.core.broadcast_client ^
-            --hidden-import app.brokers.mt5_adapter ^
-            --hidden-import bot.telegram_alerts ^
-            --exclude-module matplotlib.tests ^
-            --exclude-module numpy.random._examples
+          python -m PyInstaller SafeTrendBot.spec --clean -y
+
+      - name: Check output
+        shell: pwsh
+        run: |
+          if (Test-Path "dist\SafeTrendBot.exe") {
+            $size = (Get-Item "dist\SafeTrendBot.exe").Length / 1MB
+            Write-Host "Built: dist\SafeTrendBot.exe ($size MB)"
+          } else {
+            Write-Host "ERROR: Output file not found"
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -48,6 +48,9 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./trading_bot
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,18 +62,9 @@ jobs:
           sudo apt-get install -y build-essential python3-dev libgl1
           python -m pip install --upgrade pip
           pip install pyinstaller cython
-          pip install -r trading_bot/requirements.txt
+          pip install -r requirements.txt
       - name: Build
-        working-directory: ./trading_bot
-        run: |
-          python -m PyInstaller main.py --name SafeTrendBot --onefile --windowed \
-            --add-data "app:app" --add-data "bot:bot" \
-            --hidden-import PyQt6.sip \
-            --hidden-import numpy.core._dtype_ctypes \
-            --hidden-import app.core.trading_engine_v4 \
-            --hidden-import app.core.license_manager_v2 \
-            --exclude-module matplotlib.tests \
-            --exclude-module numpy.random._examples
+        run: python -m PyInstaller SafeTrendBot.spec --clean -y
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
