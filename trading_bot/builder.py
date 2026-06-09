@@ -82,6 +82,12 @@ def print_banner(text):
 
 
 def run(cmd: str, cwd: Optional[Path] = None, check: bool = True) -> bool:
+    """Exécute une commande shell."""
+    # Use python -m for PyInstaller if invoked directly
+    if cmd.startswith("pyinstaller "):
+        cmd = cmd.replace("pyinstaller ", f"{sys.executable} -m PyInstaller ", 1)
+    elif cmd.startswith("python "):
+        cmd = cmd.replace("python ", f"{sys.executable} ", 1)
     print(f"$ {cmd}")
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
     if result.stdout:
