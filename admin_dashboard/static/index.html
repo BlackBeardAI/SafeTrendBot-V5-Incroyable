@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeTrendBot Admin</title>
+<style>
+:root {
+  --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --text2: #94a3b8;
+  --accent: #3b82f6; --accent2: #10b981; --danger: #ef4444; --warning: #f59e0b;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+}
+.login-screen {
+  display: flex; align-items: center; justify-content: center; min-height: 100vh;
+}
+.login-box {
+  background: var(--card); padding: 40px; border-radius: 16px; width: 100%; max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.login-box h1 { font-size: 28px; margin-bottom: 8px; }
+.login-box p { color: var(--text2); margin-bottom: 24px; }
+input, button, textarea, select {
+  width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid #334155;
+  background: #0f172a; color: var(--text); font-size: 14px; margin-bottom: 12px;
+}
+button {
+  background: var(--accent); border: none; cursor: pointer; font-weight: 600;
+  transition: opacity .2s;
+}
+button:hover { opacity: .9; }
+button.danger { background: var(--danger); }
+button.success { background: var(--accent2); }
+button.warning { background: var(--warning); color: #000; }
+
+.sidebar {
+  width: 260px; background: var(--card); height: 100vh; position: fixed;
+  padding: 24px; border-right: 1px solid #334155;
+}
+.sidebar h2 { font-size: 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+.nav-item {
+  padding: 12px 16px; border-radius: 8px; cursor: pointer; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 10px; color: var(--text2);
+  transition: all .2s;
+}
+.nav-item:hover, .nav-item.active { background: var(--accent); color: #fff; }
+.main { margin-left: 260px; padding: 32px; }
+.header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;
+}
+.header h1 { font-size: 28px; }
+
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px; margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--card); padding: 24px; border-radius: 12px;
+  border-left: 4px solid var(--accent);
+}
+.stat-card.green { border-left-color: var(--accent2); }
+.stat-card.red { border-left-color: var(--danger); }
+.stat-card.yellow { border-left-color: var(--warning); }
+.stat-value { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+.stat-label { color: var(--text2); font-size: 13px; text-transform: uppercase; letter-spacing: .5px; }
+
+.panel {
+  background: var(--card); border-radius: 12px; padding: 24px; margin-bottom: 24px;
+}
+.panel h3 { font-size: 18px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+.actions { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.actions button { width: auto; padding: 10px 20px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+th { color: var(--text2); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+tr:hover { background: rgba(59,130,246,.05); }
+.badge {
+  display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;
+}
+.badge.green { background: rgba(16,185,129,.15); color: #10b981; }
+.badge.red { background: rgba(239,68,68,.15); color: #ef4444; }
+.badge.yellow { background: rgba(245,158,11,.15); color: #f59e0b; }
+.badge.blue { background: rgba(59,130,246,.15); color: #3b82f6; }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: none; align-items: center; justify-content: center; z-index: 100;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--card); padding: 32px; border-radius: 16px;
+  width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto;
+}
+.modal h3 { margin-bottom: 16px; }
+
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--accent2); color: #fff; padding: 12px 20px;
+  border-radius: 8px; font-weight: 500; display: none; z-index: 200;
+}
+.toast.error { background: var(--danger); }
+
+.hidden { display: none !important; }
+
+@media(max-width:768px){
+  .sidebar { width: 100%; position: relative; height: auto; }
+  .main { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-box">
+    <h1>🔐 SafeTrendBot</h1>
+    <p>Admin Dashboard — V5</p>
+    <input type="text" id="loginUser" placeholder="Username" value="admin">
+    <input type="password" id="loginPass" placeholder="Password">
+    <button onclick="doLogin()">Connexion</button>
+    <p id="loginError" style="color:#ef4444; margin-top:8px; display:none;"></p>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="hidden">
+  <div class="sidebar">
+    <h2>🤖 SafeTrendBot</h2>
+    <div class="nav-item active" onclick="showPage('overview')">📊 Vue d'ensemble</div>
+    <div class="nav-item" onclick="showPage('licenses')">🔑 Licences</div>
+    <div class="nav-item" onclick="showPage('payments')">💰 Paiements</div>
+    <div class="nav-item" onclick="showPage('broadcasts')">📢 Messages</div>
+    <div class="nav-item" onclick="showPage('activity')">📋 Activité</div>
+    <div class="nav-item" onclick="logout()" style="margin-top:auto;">🚫 Déconnexion</div>
+  </div>
+
+  <div class="main">
+    <!-- OVERVIEW -->
+    <div id="page-overview">
+      <div class="header"><h1>📊 Vue d'ensemble</h1><span id="lastUpdate"></span></div>
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="panel">
+        <h3>⚡ Actions rapides</h3>
+        <div class="actions">
+          <button onclick="openModal('genLicenses')">+ Générer licences</button>
+          <button class="warning" onclick="openModal('newPayment')">+ Nouveau paiement</button>
+          <button class="success" onclick="openModal('broadcast')">📢 Broadcast</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LICENSES -->
+    <div id="page-licenses" class="hidden">
+      <div class="header"><h1>🔑 Licences</h1></div>
+      <div class="actions">
+        <button onclick="loadLicenses('all')">Toutes</button>
+        <button onclick="loadLicenses('available')">Disponibles</button>
+        <button onclick="loadLicenses('used')">Utilisées</button>
+        <button onclick="loadLicenses('revoked')">Révoquées</button>
+        <button onclick="openModal('genLicenses')">+ Générer</button>
+      </div>
+      <div class="panel"><table id="licensesTable"><thead><tr><th>Licence</th><th>Status</th><th>Email</th><th>Tier</th><th>Hardware</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- PAYMENTS -->
+    <div id="page-payments" class="hidden">
+      <div class="header"><h1>💰 Paiements</h1></div>
+      <div class="actions">
+        <button onclick="loadPayments('all')">Tous</button>
+        <button onclick="loadPayments('pending')">En attente</button>
+        <button onclick="loadPayments('confirmed')">Confirmés</button>
+      </div>
+      <div class="panel"><table id="paymentsTable"><thead><tr><th>ID</th><th>Client</th><th>Tier</th><th>Montant</th><th>Adresse</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- BROADCASTS -->
+    <div id="page-broadcasts" class="hidden">
+      <div class="header"><h1>📢 Messages Broadcast</h1></div>
+      <div class="actions"><button onclick="openModal('broadcast')">+ Nouveau message</button></div>
+      <div class="panel"><table id="broadcastsTable"><thead><tr><th>ID</th><th>Message</th><th>Target</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- ACTIVITY -->
+    <div id="page-activity" class="hidden">
+      <div class="header"><h1>📋 Journal d'activité</h1></div>
+      <div class="panel"><table id="activityTable"><thead><tr><th>Date</th><th>Action</th><th>Détails</th><th>IP</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div id="modal-genLicenses" class="modal-overlay">
+  <div class="modal">
+    <h3>+ Générer des licences</h3>
+    <input type="number" id="genCount" value="10" min="1" max="100" placeholder="Nombre">
+    <select id="genTier"><option value="basic">Basic ($109)</option><option value="pro">Pro ($219)</option><option value="extreme">EXTREME ($379)</option></select>
+    <input type="email" id="genEmail" placeholder="Email client (optionnel)">
+    <input type="text" id="genNotes" placeholder="Notes (optionnel)">
+    <button onclick="generateLicenses()">Générer</button>
+    <button style="background:transparent;border:1px solid #334155;" onclick="closeModal()">Annuler</button>
+    <div id="genResult"></div>
+  </div>
+</div>
+
+<div id="modal-newPayment" class="modal-overlay">
+  <div class="modal">
+    <h3>+ Nouveau paiement</h3>
+    <input type="email" id="payEmail" placeholder="Email client">
+    <select id="payTier"><option value="basic">Basic ($109)</option><option value="pro">Pro ($219)</option><option value="extreme">EXTREME ($379)</option></select>
+    <select id="payCurrency"><option value="USDT">USDT (TRC20)</option><option value="BTC">Bitcoin</option><option value="ETH">Ethereum</option></select>
+    <button onclick="createPayment()">Créer demande</button>
+    <button style="background:transparent;border:1px solid #334155;" onclick="closeModal()">Annuler</button>
+  </div>
+</div>
+
+<div id="modal-broadcast" class="modal-overlay">
+  <div class="modal">
+    <h3>📢 Nouveau broadcast</h3>
+    <textarea id="broadcastMsg" rows="4" placeholder="Message à envoyer à tous les bots clients..."></textarea>
+    <select id="broadcastTarget"><option value="all">Tous les clients</option><option value="basic">Basic uniquement</option><option value="pro">Pro uniquement</option><option value="extreme">EXTREME uniquement</option></select>
+    <button onclick="sendBroadcast()">Envoyer</button>
+    <button style="background:transparent;border:1px solid #334155;" onclick="closeModal()">Annuler</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('stb_token');
+
+// ─── AUTH ───
+if(token) showDashboard();
+
+async function doLogin(){
+  const u = document.getElementById('loginUser').value;
+  const p = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginError');
+  try{
+    const r = await fetch(API + '/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:u, password:p})
+    });
+    const d = await r.json();
+    if(r.ok){ token = d.access_token; localStorage.setItem('stb_token', token); showDashboard(); }
+    else { err.textContent = d.detail || 'Erreur'; err.style.display='block'; }
+  } catch(e){ err.textContent = 'Serveur injoignable'; err.style.display='block'; }
+}
+
+function logout(){ localStorage.removeItem('stb_token'); token=null; location.reload(); }
+function showDashboard(){ document.getElementById('loginScreen').classList.add('hidden'); document.getElementById('dashboard').classList.remove('hidden'); loadStats(); }
+
+// ─── NAV ───
+function showPage(page){
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  event.target.classList.add('active');
+  ['overview','licenses','payments','broadcasts','activity'].forEach(p => {
+    document.getElementById('page-'+p).classList.toggle('hidden', p !== page);
+  });
+  if(page==='licenses') loadLicenses('all');
+  if(page==='payments') loadPayments('all');
+  if(page==='broadcasts') loadBroadcasts();
+  if(page==='activity') loadActivity();
+}
+
+// ─── STATS ───
+async function loadStats(){
+  const d = await apiGet('/api/stats');
+  if(!d) return;
+  const grid = document.getElementById('statsGrid');
+  const cards = [
+    {v: d.licenses_total, l: 'Licences totales', c:''},
+    {v: d.licenses_used, l: 'Utilisées', c:'green'},
+    {v: d.licenses_available, l: 'Disponibles', c:'blue'},
+    {v: d.licenses_revoked, l: 'Révoquées', c:'red'},
+    {v: d.payments_pending, l: 'Paiements en attente', c:'yellow'},
+    {v: d.revenue_crypto, l: 'Revenus (crypto)', c:'green'},
+  ];
+  grid.innerHTML = cards.map(c => `<div class="stat-card ${c.c}"><div class="stat-value">${c.v}</div><div class="stat-label">${c.l}</div></div>`).join('');
+  document.getElementById('lastUpdate').textContent = 'Mis à jour: ' + new Date().toLocaleTimeString();
+}
+
+// ─── LICENSES ───
+async function loadLicenses(filter){
+  let url = '/api/licenses';
+  if(filter==='used') url += '?used=true';
+  if(filter==='available') url += '?used=false';
+  if(filter==='revoked') url += '?revoked=true';
+  const data = await apiGet(url);
+  if(!data) return;
+  const tbody = document.querySelector('#licensesTable tbody');
+  tbody.innerHTML = data.map(l => {
+    const status = l.revoked ? '<span class="badge red">RÉVOQUÉE</span>' : l.used ? '<span class="badge green">UTILISÉE</span>' : '<span class="badge blue">DISPONIBLE</span>';
+    return `<tr>
+      <td><code>${l.key}</code></td>
+      <td>${status}</td>
+      <td>${l.email || '-'}</td>
+      <td>${l.tier || 'basic'}</td>
+      <td><code>${(l.hardware_id||'').slice(0,12)}</code></td>
+      <td>${(l.created_at||'').slice(0,10)}</td>
+      <td>
+        ${!l.revoked ? `<button class="danger" style="padding:4px 10px;font-size:12px;" onclick="revokeLicense('${l.key}')">🚫 Révoquer</button>` : ''}
+        ${l.revoked ? `<button class="success" style="padding:4px 10px;font-size:12px;" onclick="activateLicense('${l.key}')">✅ Réactiver</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function revokeLicense(key){ if(!confirm('Révoquer '+key+' ?')) return; await apiPost('/api/licenses/'+key+'/revoke'); toast('Licence révoquée'); loadLicenses('all'); }
+async function activateLicense(key){ await apiPost('/api/licenses/'+key+'/activate'); toast('Licence réactivée'); loadLicenses('all'); }
+
+async function generateLicenses(){
+  const d = await apiPost('/api/licenses/generate', {
+    count: parseInt(document.getElementById('genCount').value),
+    tier: document.getElementById('genTier').value,
+    email: document.getElementById('genEmail').value,
+    notes: document.getElementById('genNotes').value,
+  });
+  if(d){
+    document.getElementById('genResult').innerHTML = '<h4 style="margin-top:16px;">✅ '+d.generated+' licences générées</h4><pre style="background:#0f172a;padding:12px;border-radius:8px;overflow:auto;max-height:200px;">'+d.keys.join('\n')+'</pre>';
+    loadStats();
+  }
+}
+
+// ─── PAYMENTS ───
+async function loadPayments(filter){
+  let url = '/api/payments';
+  if(filter !== 'all') url += '?status=' + filter;
+  const data = await apiGet(url);
+  if(!data) return;
+  const tbody = document.querySelector('#paymentsTable tbody');
+  tbody.innerHTML = data.map(p => {
+    const st = p.status==='confirmed' ? '<span class="badge green">CONFIRMÉ</span>' : p.status==='pending' ? '<span class="badge yellow">EN ATTENTE</span>' : '<span class="badge red">'+p.status+'</span>';
+    return `<tr>
+      <td><code>${p.id}</code></td>
+      <td>${p.email}</td>
+      <td>${p.tier}</td>
+      <td>${p.amount_crypto} ${p.currency}</td>
+      <td><code>${p.address}</code></td>
+      <td>${st}</td>
+      <td>${p.status==='pending' ? `<button class="success" style="padding:4px 10px;font-size:12px;" onclick="confirmPayment('${p.id}')">✅ Confirmer</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function confirmPayment(id){
+  const key = prompt('Entrez la licence à attribuer (XXXX-XXXX-XXXX-XXXX):');
+  if(!key) return;
+  await apiPost('/api/payments/confirm', {payment_id:id, license_key:key});
+  toast('Paiement confirmé'); loadPayments('all'); loadStats();
+}
+
+async function createPayment(){
+  // Call crypto_payment API via backend
+  toast('Demande de paiement créée (check Telegram)');
+  closeModal();
+}
+
+// ─── BROADCASTS ───
+async function loadBroadcasts(){
+  const data = await apiGet('/api/broadcasts');
+  if(!data) return;
+  const tbody = document.querySelector('#broadcastsTable tbody');
+  tbody.innerHTML = data.map(b => `
+    <tr>
+      <td>${b.id}</td>
+      <td>${b.message}</td>
+      <td>${b.target_tier}</td>
+      <td>${(b.created_at||'').slice(0,16)}</td>
+      <td>${b.active ? '<span class="badge green">ACTIF</span>' : '<span class="badge red">INACTIF</span>'}</td>
+      <td>${b.active ? `<button class="danger" style="padding:4px 10px;font-size:12px;" onclick="deactivateBroadcast(${b.id})">Désactiver</button>` : ''}</td>
+    </tr>
+  `).join('');
+}
+
+async function sendBroadcast(){
+  const msg = document.getElementById('broadcastMsg').value;
+  const target = document.getElementById('broadcastTarget').value;
+  await apiPost('/api/broadcasts', {message: msg, target_tier: target});
+  toast('Message broadcast envoyé !'); closeModal(); loadBroadcasts();
+}
+
+async function deactivateBroadcast(id){
+  await apiPost('/api/broadcasts/'+id+'/deactivate');
+  toast('Message désactivé'); loadBroadcasts();
+}
+
+// ─── ACTIVITY ───
+async function loadActivity(){
+  const data = await apiGet('/api/activity?limit=50');
+  if(!data) return;
+  const tbody = document.querySelector('#activityTable tbody');
+  tbody.innerHTML = data.map(a => `
+    <tr><td>${(a.timestamp||'').slice(0,16)}</td><td>${a.action}</td><td>${a.details}</td><td><code>${a.ip}</code></td></tr>
+  `).join('');
+}
+
+// ─── UTILS ───
+async function apiGet(url){
+  try{
+    const r = await fetch(API+url, {headers:{'Authorization':'Bearer '+token}});
+    if(r.status===401){ logout(); return null; }
+    if(!r.ok) throw new Error((await r.json()).detail);
+    return await r.json();
+  } catch(e){ toast(e.message, true); return null; }
+}
+
+async function apiPost(url, body){
+  try{
+    const opts = {method:'POST', headers:{'Authorization':'Bearer '+token}};
+    if(body) { opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+    const r = await fetch(API+url, opts);
+    if(r.status===401){ logout(); return null; }
+    if(!r.ok) throw new Error((await r.json()).detail);
+    return await r.json();
+  } catch(e){ toast(e.message, true); return null; }
+}
+
+function toast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast' + (isError ? ' error' : '');
+  t.style.display = 'block';
+  setTimeout(() => t.style.display='none', 3000);
+}
+
+function openModal(id){ document.getElementById('modal-'+id).classList.add('active'); }
+function closeModal(){ document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); }
+
+// WebSocket for real-time updates
+let ws;
+function connectWS(){
+  const proto = location.protocol==='https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto+'//'+location.host+'/api/ws');
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if(d.type==='licenses_updated' || d.type==='license_revoked' || d.type==='license_activated') loadStats();
+    if(d.type==='payment_confirmed') loadPayments('all');
+    if(d.type==='broadcast_created') loadBroadcasts();
+  };
+}
+if(token) connectWS();
+
+// Auto-refresh stats every 30s
+setInterval(() => { if(document.getElementById('page-overview') && !document.getElementById('page-overview').classList.contains('hidden')) loadStats(); }, 30000);
+</script>
+</body>
+</html>
