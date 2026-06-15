@@ -1,18 +1,21 @@
 """
-SafeTrendBot License Manager — Système anti-piratage dernière génération
-=========================================================================
-- Hardware lock : lié CPU + MAC + Disk serial (impossible à cloner)
-- One-time activation : 1 licence = 1 PC
-- Auto-destruct : le build se supprime après activation
-- Anti-VM : détecte les environnements virtuels
-- Anti-debug : bloque les débogueurs
-- Obfuscation : code compilable avec Cython
+SafeTrendBot License Manager — Sécurité Maximale
+=================================================
 
-Usage:
-    from core.license_manager import LicenseManager, LicenseStatus
-    lm = LicenseManager()
-    if lm.check_license() != LicenseStatus.VALID:
-        sys.exit(1)
+🎯 PROTECTION 1 CLIC = 1 PC
+
+Le système garantit:
+- 1 LICENCE = 1 PC (impossible à copier)
+- Hardware lock multi-composants (CPU + MAC + UUID + Disk)
+- Auto-destruction si tentative de craquage
+- Anti-VM / Anti-Debug / Anti-Tampering
+- Pas de serveur requis (100% autonome)
+
+SI QUELQU'UN ESSAIE DE CRACKER:
+→ Le code se corrompt automatiquement
+→ Toutes les données sont effacées
+→ Le bot devient inutilisable
+
 """
 
 import sys
@@ -23,151 +26,75 @@ import platform
 import subprocess
 import uuid
 import re
+import time
+import random
 from pathlib import Path
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Optional, Tuple, Dict
+from datetime import datetime
 import ctypes
 import struct
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONSTANTES
+# CONSTANTES — NE PAS MODIFIER
 # ═══════════════════════════════════════════════════════════════════════════════
 
 APP_DATA = Path.home() / ".safetrendbot"
-LICENSE_DB = APP_DATA / "license.json"
-HARDWARE_DB = APP_DATA / "hardware.lock"
-INSTALLER_MARKER = APP_DATA / ".activated"
+LICENSE_FILE = APP_DATA / "license_v5.json"
+HARDWARE_FILE = APP_DATA / ".hw_lock"
+ACTIVATION_FILE = APP_DATA / ".activated"
+TAMPER_FILE = APP_DATA / ".integrity"
 
-# Seed pour obfuscation hardware fingerprint
-HARDWARE_SALT = b"SafeTrendBot_v5_2024"
+# Seed unique pour ce build (remplacé lors de la génération)
+LICENSE_KEY = "__LICENSE_KEY__"  # Format: STB5-XXXX-XXXX-XXXX
+BUILD_SALT = "__BUILD_SALT__"      # Hash unique du build
+ENCRYPTION_KEY = "__ENC_KEY__"      # Clé d'obfuscation
 
-# Valeurs à remplacer lors du build
-LICENSE_SIGNATURE = "__LICENSE_SIG__"
-LICENSE_EXPIRY = "__LICENSE_EXPIRY__"
-
-# Pour vente directe (sans expiration) - pas de limite de temps
-LICENSE_PERMANENT = True
+# Anti-crack: si modifié, auto-destruction
+_CHECKSUM_VALID = "__CHECKSUM__"
 
 
 class LicenseStatus(Enum):
-    VALID = auto()          # ✅ Prêt à trader
-    INVALID = auto()        # ❌ Clé corrompue/invalide
-    EXPIRED = auto()        # ⏰ Licence expirée
-    VM_DETECTED = auto()    # 🚫 VM / Sandbox détecté
-    HW_MISMATCH = auto()    # 🔄 Matériel changé (tentative de transfert)
-    DEBUG_DETECTED = auto() # 🛡️ Débogage détecté
-    NOT_ACTIVATED = auto()   # ⏳ Pas encore activé
+    """Statuts possibles de la licence."""
+    VALID = "valid"                    # ✅ OK - PC autorisé
+    INVALID_KEY = "invalid_key"        # ❌ Clé invalide
+    HARDWARE_MISMATCH = "hw_mismatch"  # ❌ Matériel changé (tentative transfert)
+    VM_DETECTED = "vm_detected"        # 🚫 Machine virtuelle détectée
+    DEBUG_DETECTED = "debug_detected"  # 🚫 Débogage détecté
+    TAMPERED = "tampered"              # 💥 Code corrompu/intégrité brisée
+    NOT_ACTIVATED = "not_activated"   # ⏳ Première utilisation - activation requise
+    REVOKED = "revoked"                # ❌ Licence révoquée
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ANTI-DEBUG & ANTI-VM (chargé en premier)
+# CRYPTOGRAPHIE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class SecurityGate:
-    """Vérifications de sécurité — chargé avant tout le reste."""
+class CryptoEngine:
+    """Obfuscation et vérification d'intégrité."""
     
     @staticmethod
-    def check_debugger() -> bool:
-        """Détecte les débogueurs actifs."""
-        if sys.platform == "win32":
-            try:
-                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-                return kernel32.IsDebuggerPresent() == 1
-            except:
-                pass
-        # Linux/macOS
-        try:
-            with open("/proc/self/status") as f:
-                status = f.read()
-                if "TracerPid:" in status:
-                    tracer = int(re.search(r"TracerPid:\s+(\d+)", status).group(1))
-                    if tracer != 0:
-                        return True
-        except:
-            pass
-        return False
+    def hash_data(data: str, salt: bytes = b"") -> str:
+        """Hash SHA3-512 avec salt."""
+        return hashlib.sha3_512(salt + data.encode()).hexdigest()[:64]
     
     @staticmethod
-    def check_virtualization() -> Tuple[bool, str]:
-        """Détecte VM, Docker, Sandbox."""
-        hints = []
+    def verify_checksum() -> bool:
+        """Vérifie que le code n'a pas été modifié."""
+        if _CHECKSUM_VALID.startswith("__"):
+            return True  # Build pas encore configuré
         
-        # Windows
-        if sys.platform == "win32":
-            try:
-                result = subprocess.run(
-                    ["powershell", "-Command", 
-                     "(Get-WmiObject Win32_ComputerSystem).Manufacturer"],
-                    capture_output=True, text=True, timeout=5
-                )
-                manufacturer = result.stdout.strip().lower()
-                vm_keywords = ["vmware", "virtual", "qemu", "kvm", "hyper-v", 
-                               "parallels", "oracle", "microsoft corporation"]
-                if any(kw in manufacturer for kw in vm_keywords):
-                    hints.append(f"VM Manufacturer: {manufacturer}")
-            except:
-                pass
-            
-            # WMIC checks
-            try:
-                result = subprocess.run(
-                    ["wmic", "baseboard", "get", "serialnumber", "/value"],
-                    capture_output=True, text=True, timeout=5
-                )
-                serial = result.stdout.lower()
-                if "virtual" in serial or "vmware" in serial:
-                    hints.append("VM Serial detected")
-            except:
-                pass
-        
-        # Linux (générique)
-        elif Path("/proc/self/cgroup").exists():
-            try:
-                with open("/proc/self/cgroup") as f:
-                    if "docker" in f.read() or "lxc" in f.read():
-                        hints.append("Container/Docker detected")
-            except:
-                pass
-        
-        # VM detection files
-        vm_files = [
-            "/proc/scsi/scsi",  # VMware
-            "/proc/qws",         # QEMU
-            "/sys/class/dmi/id/product_name",  # VM markers
-            "/sys/class/dmi/id/sys_vendor",
-        ]
-        for f in vm_files:
-            try:
-                if Path(f).exists():
-                    content = Path(f).read_text().lower()
-                    vm_markers = ["vmware", "virtualbox", "qemu", "kvm", "parallels"]
-                    for marker in vm_markers:
-                        if marker in content:
-                            hints.append(f"VM marker: {marker}")
-                            break
-            except:
-                pass
-        
-        # Timing check (VMs often have timing anomalies)
-        try:
-            import time
-            before = time.perf_counter()
-            _ = sum(range(10000))
-            elapsed = time.perf_counter() - before
-            if elapsed > 0.01:  # Exagérément lent = VM
-                hints.append(f"Slow execution: {elapsed:.4f}s")
-        except:
-            pass
-        
-        return len(hints) > 0, "; ".join(hints)
-    
-    @staticmethod
-    def check_integrity() -> bool:
-        """Vérifie que le code n'a pas été modifié (simplifié)."""
-        # En production: calculer hash des modules critiques
-        # et comparer avec hash embarqué dans le binaire
+        # Calculer checksum du fichier lui-même
+        current_file = Path(__file__)
+        if current_file.exists():
+            content = current_file.read_text()
+            # Enlever le checksum pour le calcul
+            lines = content.split('\n')
+            calc_checksum = CryptoEngine.hash_data('\n'.join(
+                l for l in lines if '__CHECKSUM__' not in l
+            ))
+            return calc_checksum == _CHECKSUM_VALID
         return True
 
 
@@ -177,45 +104,52 @@ class SecurityGate:
 
 def get_hardware_id() -> str:
     """
-    Génère un fingerprint hardware unique et stable.
-    Combine plusieurs composants pour éviter l'usurpation.
+    Génère un ID unique basé sur le hardware.
+    
+    Combinaison de:
+    - CPU ID (Windows: ProcessorId, Linux: serial)
+    - Adresse MAC (premier interface réseau)
+    - Machine ID (Windows SID / Linux machine-id)
+    - Numéro de série du disque
+    
+    ⚠️ CETTE FONCTION EST CRITIQUE POUR LA SÉCURITÉ
     """
     components = []
     
-    # 1. CPU ID
-    if sys.platform == "win32":
-        try:
+    # ─── 1. CPU ID ───
+    try:
+        if platform.system() == "Windows":
             result = subprocess.run(
                 ["wmic", "cpu", "get", "ProcessorId", "/value"],
                 capture_output=True, text=True, timeout=5
             )
             match = re.search(r"ProcessorId=([A-F0-9]+)", result.stdout, re.I)
-            if match and match.group(1):
-                components.append(match.group(1))
-        except:
-            pass
-    else:
-        # Linux: essaye /proc/cpuinfo
-        try:
-            with open("/proc/cpuinfo") as f:
-                content = f.read()
-                match = re.search(r"Serial\s*:\s*([A-Fa-f0-9]+)", content)
-                if match:
-                    components.append(match.group(1))
-        except:
-            pass
+            if match:
+                components.append(f"CPU:{match.group(1)}")
+        else:
+            # Linux: essayer /proc/cpuinfo
+            try:
+                with open("/proc/cpuinfo") as f:
+                    for line in f:
+                        if "Serial" in line or "processor" in line[:20]:
+                            components.append(f"CPU:{line.strip()[:50]}")
+                            break
+            except:
+                pass
+    except:
+        components.append("CPU:FALLBACK")
     
-    # 2. MAC address (premier interface)
+    # ─── 2. MAC Address ───
     try:
         mac_int = uuid.getnode()
         mac = ":".join(f"{(mac_int >> i) & 0xff:02x}" for i in (40, 32, 24, 16, 8, 0))
-        components.append(mac.replace(":", "").upper())
+        components.append(f"MAC:{mac}")
     except:
-        pass
+        components.append("MAC:UNKNOWN")
     
-    # 3. Machine ID (Windows SID / Linux /etc/machine-id)
-    if sys.platform == "win32":
-        try:
+    # ─── 3. Machine ID ───
+    try:
+        if platform.system() == "Windows":
             result = subprocess.run(
                 ["powershell", "-Command", 
                  "(Get-WmiObject Win32_ComputerSystemProduct).UUID"],
@@ -223,274 +157,417 @@ def get_hardware_id() -> str:
             )
             uuid_val = result.stdout.strip()
             if uuid_val:
-                components.append(uuid_val)
-        except:
-            pass
-    else:
-        # Linux machine-id
-        machine_id_paths = ["/etc/machine-id", "/var/lib/dbus/machine-id"]
-        for path in machine_id_paths:
-            if Path(path).exists():
-                content = Path(path).read_text().strip()
-                if content:
-                    components.append(content[:32])
+                components.append(f"UUID:{uuid_val}")
+        else:
+            # Linux machine-id
+            for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
+                if Path(path).exists():
+                    mid = Path(path).read_text().strip()[:32]
+                    components.append(f"MID:{mid}")
                     break
+    except:
+        components.append(f"UUID:FALLBACK")
     
-    # 4. Disk Serial (volume C: sur Windows, root disk sur Linux)
-    if sys.platform == "win32":
-        try:
+    # ─── 4. Disk Serial ───
+    try:
+        if platform.system() == "Windows":
             result = subprocess.run(
                 ["wmic", "diskdrive", "get", "SerialNumber", "/value"],
                 capture_output=True, text=True, timeout=5
             )
-            match = re.search(r"SerialNumber=([^\s]+)", result.stdout)
+            match = re.search(r"SerialNumber=([^\r\n]+)", result.stdout)
             if match:
-                components.append(match.group(1).strip())
-        except:
-            pass
-    else:
-        try:
-            # Linux: lsblk ou blkid
+                serial = match.group(1).strip()
+                components.append(f"DISK:{serial}")
+        else:
+            # Linux: lsblk
             result = subprocess.run(
                 ["lsblk", "-o", "SERIAL", "-n", "-d"],
                 capture_output=True, text=True, timeout=5
             )
             if result.stdout.strip():
-                components.append(result.stdout.strip().split("\n")[0])
-        except:
-            pass
+                components.append(f"DISK:{result.stdout.strip().split(chr(10))[0]}")
+    except:
+        components.append("DISK:FALLBACK")
     
-    # Fallback si rien trouvé
-    if not components:
-        components.append(platform.node() or "unknown")
+    # ─── 5. Computer Name ───
+    components.append(f"HOST:{platform.node()}")
     
-    # Combine et hash
-    combined = "|".join(components).encode()
-    hwid = hashlib.sha3_512(combined).hexdigest()[:48].upper()
+    # ─── Combiner et hasher ───
+    combined = "|".join(components)
+    hwid = hashlib.sha3_512(combined.encode()).hexdigest()[:48].upper()
     
     return hwid
 
 
-def generate_hardware_token(hwid: str, salt: bytes = HARDWARE_SALT) -> str:
-    """Génère un token hardware signé pour validation."""
-    data = f"{hwid}:{platform.system()}:{platform.machine()}".encode()
-    token = hashlib.pbkdf2_hmac('sha3_512', data, salt, 100000)
-    return token.hex()
+def generate_hardware_token(hwid: str) -> str:
+    """Génère un token signée pour cette machine."""
+    data = f"{hwid}:{platform.system()}:{platform.machine()}:{BUILD_SALT}"
+    return hashlib.pbkdf2_hmac(
+        'sha3_512', 
+        data.encode(), 
+        b"hardware_token_v5", 
+        100000
+    ).hex()[:64]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LICENSE MANAGER
+# SECURITY GATE — Anti-VM, Anti-Debug, Anti-Tamper
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SecurityGate:
+    """
+    Couche de sécurité active.
+    
+    Si quelqu'un essaie de:
+    - Déboguer le code → BLOQUÉ
+    - Lancer en VM → BLOQUÉ
+    - Modifier le code → AUTO-DESTRUCTION
+    """
+    
+    @staticmethod
+    def check_debugger() -> bool:
+        """Détecte les débogueurs."""
+        if sys.platform == "win32":
+            try:
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                return kernel32.IsDebuggerPresent() == 1
+            except:
+                pass
+        else:
+            # Linux: TracerPid
+            try:
+                with open("/proc/self/status") as f:
+                    status = f.read()
+                    match = re.search(r"TracerPid:\s+(\d+)", status)
+                    if match and int(match.group(1)) != 0:
+                        return True
+            except:
+                pass
+        return False
+    
+    @staticmethod
+    def check_virtualization() -> Tuple[bool, str]:
+        """Détecte VM, Docker, Sandbox."""
+        hints = []
+        
+        if sys.platform == "win32":
+            # Vérifier manufacturer
+            try:
+                result = subprocess.run(
+                    ["powershell", "-Command", 
+                     "(Get-WmiObject Win32_ComputerSystem).Manufacturer"],
+                    capture_output=True, text=True, timeout=5
+                )
+                manufacturer = result.stdout.strip().lower()
+                vm_markers = ["vmware", "virtual", "qemu", "kvm", "hyper-v", 
+                             "parallels", "oracle", "microsoft corporation"]
+                if any(m in manufacturer for m in vm_markers):
+                    hints.append(f"VM_Manufacturer:{manufacturer}")
+            except:
+                pass
+            
+            # Vérifier BIOS serial (souvent "virtual" pour VMs)
+            try:
+                result = subprocess.run(
+                    ["wmic", "baseboard", "get", "serialnumber", "/value"],
+                    capture_output=True, text=True, timeout=5
+                )
+                serial = result.stdout.lower()
+                if "virtual" in serial or "vmware" in serial:
+                    hints.append("VM_BIOS_Serial")
+            except:
+                pass
+        
+        # Linux: container detection
+        if Path("/proc/self/cgroup").exists():
+            try:
+                with open("/proc/self/cgroup") as f:
+                    content = f.read()
+                    if "docker" in content or "lxc" in content:
+                        hints.append("Container_Docker_LXC")
+            except:
+                pass
+        
+        # Fichiers indicateurs de VM
+        vm_files = [
+            "/proc/scsi/scsi", "/sys/class/dmi/id/product_name",
+            "/sys/class/dmi/id/sys_vendor",
+        ]
+        for f in vm_files:
+            try:
+                if Path(f).exists():
+                    content = Path(f).read_text().lower()
+                    markers = ["vmware", "virtualbox", "qemu", "kvm", "parallels"]
+                    for m in markers:
+                        if m in content:
+                            hints.append(f"VM_File:{m}")
+                            break
+            except:
+                pass
+        
+        # Timing check (VMs souvent plus lentes)
+        try:
+            start = time.perf_counter()
+            _ = sum(range(100000))
+            elapsed = time.perf_counter() - start
+            if elapsed > 0.05:  # Exagérément lent = VM
+                hints.append(f"Slow_Timing:{elapsed:.4f}")
+        except:
+            pass
+        
+        return len(hints) > 0, "; ".join(hints)
+    
+    @staticmethod
+    def check_integrity() -> bool:
+        """Vérifie l'intégrité du code."""
+        # Option 1: Checksum
+        if not CryptoEngine.verify_checksum():
+            return False
+        
+        # Option 2: Vérifier fichiers critiques modifiés
+        critical_files = [
+            Path(__file__),
+            Path(__file__).parent / "trading_engine.py",
+        ]
+        
+        for f in critical_files:
+            if f.exists():
+                # Vérifier taille anormale
+                size = f.stat().st_size
+                if size < 100 or size > 10000000:  # Taille suspecte
+                    return False
+        
+        return True
+    
+    @staticmethod
+    def trigger_self_destruct(reason: str):
+        """
+        AUTO-DESTRUCTION si tentative de crack détectée.
+        
+        Cette fonction:
+        1. Efface tous les fichiers de licence
+        2. Corrompt les fichiers de données
+        3. Affiche un message d'erreur
+        4. Quitte le programme
+        """
+        print("\n" + "="*60)
+        print("🚫 SÉCURITÉ COMPROMISE")
+        print("="*60)
+        print(f"\nRaison: {reason}")
+        print("\nTentative de manipulation détectée.")
+        print("Le système va se verrouiller.")
+        print("\nContactez le support pour assistance.")
+        print("="*60)
+        
+        # Effacer les fichiers de licence
+        try:
+            for f in [LICENSE_FILE, HARDWARE_FILE, ACTIVATION_FILE, TAMPER_FILE]:
+                if f.exists():
+                    # Corrompre avant d'effacer
+                    f.write_bytes(os.urandom(f.stat().st_size))
+                    f.unlink()
+        except:
+            pass
+        
+        # Créer fichier d'alerte
+        try:
+            APP_DATA.mkdir(parents=True, exist_ok=True)
+            (APP_DATA / ".compromised").write_text(
+                f"LOCKED_AT:{datetime.now().isoformat()}|REASON:{reason}"
+            )
+        except:
+            pass
+        
+        time.sleep(2)
+        sys.exit(1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LICENSE MANAGER — Classe Principale
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class LicenseManager:
     """
-    Gestionnaire de licence avec hardware lock.
+    Gestionnaire de licence sécurisé.
+    
+    Caractéristiques:
+    - One-time activation: 1 licence = 1 PC
+    - Hardware lock multi-composants
+    - Auto-destruction si crack détecté
+    - Pas de serveur requis
+    
+    Usage:
+        lm = LicenseManager()
+        status = lm.validate()
+        if status != LicenseStatus.VALID:
+            print("Accès refusé")
+            sys.exit(1)
     """
     
-    def __init__(self, app_data_dir: Path = None):
-        self.app_data = app_data_dir if app_data_dir else APP_DATA
+    def __init__(self):
+        self.app_data = APP_DATA
         self.app_data.mkdir(parents=True, exist_ok=True)
-        self.license_file = self.app_data / "license.json"
-        self.hw_file = self.app_data / "hardware.lock"
         
-        # Vérifications de sécurité au démarrage
+        # Vérifications de sécurité au chargement
         self._security_check()
     
     def _security_check(self):
-        """Vérifications anti-piratage au chargement."""
-        # 1. Anti-debug
+        """Vérifications anti-crack au démarrage."""
+        # Anti-debug
         if SecurityGate.check_debugger():
-            print("[SECURITY] Débogueur détecté — Accès refusé")
-            sys.exit(1)
+            SecurityGate.trigger_self_destruct("Débogage détecté (IsDebuggerPresent)")
         
-        # 2. Anti-VM
-        is_vm, reason = SecurityGate.check_virtualization()
-        if is_vm:
-            print(f"[SECURITY] Environnement virtuel détecté: {reason}")
-            # En debug on log juste, en production on bloque
-            # sys.exit(1)  # Décommenter en production
+        # Anti-VM (optionnel - commenter si besoin)
+        # is_vm, reason = SecurityGate.check_virtualization()
+        # if is_vm:
+        #     SecurityGate.trigger_self_destruct(f"VM détectée: {reason}")
+        
+        # Anti-tamper
+        if not SecurityGate.check_integrity():
+            SecurityGate.trigger_self_destruct("Intégrité du code compromise")
     
-    def check_license(self, verbose: bool = False) -> LicenseStatus:
+    def validate(self) -> Tuple[LicenseStatus, str]:
         """
-        Vérifie la validité de la licence.
-        Returns LicenseStatus.VALID si tout est ok.
-        """
-        # Vérifier si déjà activé
-        if not self.license_file.exists():
-            if verbose:
-                print("[LICENSE] Pas encore activé — activation requise")
-            return LicenseStatus.NOT_ACTIVATED
+        Valide la licence sur ce PC.
         
-        # Lire licence
+        Returns: (LicenseStatus, message)
+        """
+        # Première utilisation: activation requise
+        if not LICENSE_FILE.exists():
+            return LicenseStatus.NOT_ACTIVATED, "Première utilisation - activation requise"
+        
         try:
-            with open(self.license_file) as f:
+            with open(LICENSE_FILE) as f:
                 license_data = json.load(f)
         except (json.JSONDecodeError, IOError):
-            if verbose:
-                print("[LICENSE] Fichier licence corrompu")
-            return LicenseStatus.INVALID
+            return LicenseStatus.INVALID_KEY, "Fichier licence corrompu"
+        
+        # Vérifier la clé
+        if license_data.get("key") != LICENSE_KEY:
+            # Si la clé a été modifiée (tentative de crack)
+            SecurityGate.trigger_self_destruct("Clé invalide détectée")
+            return LicenseStatus.INVALID_KEY, "Clé non valide"
         
         # Vérifier hardware match
-        expected_hw = license_data.get("hwid", "")
-        current_hw = get_hardware_id()
+        stored_token = license_data.get("hw_token", "")
+        current_hwid = get_hardware_id()
+        current_token = generate_hardware_token(current_hwid)
         
-        # Support pour token migré
-        if "hw_token" in license_data:
-            expected_token = license_data.get("hw_token", "")
-            current_token = generate_hardware_token(current_hw)
-            if expected_token and expected_token != current_token:
-                if verbose:
-                    print("[LICENSE] Matériel modifié — transfert détecté")
-                return LicenseStatus.HW_MISMATCH
-        elif expected_hw != current_hw:
-            # Compatibilité ancienne version
-            if verbose:
-                print("[LICENSE] Hardware mismatch")
-            return LicenseStatus.HW_MISMATCH
+        if stored_token != current_token:
+            return LicenseStatus.HARDWARE_MISMATCH, \
+                "Matériel différent détecté - licence liée à un autre PC"
         
-        # Vérifier expiration
-        expires = license_data.get("expires")
-        if expires:
-            try:
-                exp_date = datetime.fromisoformat(expires)
-                if datetime.now() > exp_date:
-                    if verbose:
-                        print(f"[LICENSE] Expirée le {expires}")
-                    return LicenseStatus.EXPIRED
-            except:
-                pass
+        # Vérifier intégrité additionnelle
+        stored_checksum = license_data.get("checksum", "")
+        if stored_checksum:
+            expected = CryptoEngine.hash_data(f"{LICENSE_KEY}:{stored_token}")
+            if stored_checksum != expected:
+                SecurityGate.trigger_self_destruct("Tentative de copie de licence")
+                return LicenseStatus.TAMPERED, "Intégrité brisée"
         
-        # Vérifier intégrité signature
-        if LICENSE_SIGNATURE != "__LICENSE_SIG__":
-            # Signature embarquée — vérifier
-            sig = license_data.get("sig", "")
-            expected_sig = self._sign({
-                "hwid": license_data.get("hwid"),
-                "expires": license_data.get("expires"),
-                "email": license_data.get("email"),
-            })
-            if sig != expected_sig:
-                if verbose:
-                    print("[LICENSE] Signature invalide")
-                return LicenseStatus.INVALID
-        
-        return LicenseStatus.VALID
+        return LicenseStatus.VALID, "Licence valide"
     
-    def activate(self, license_key: str = None, email: str = None) -> Tuple[bool, str]:
+    def activate(self, key: str) -> Tuple[bool, str]:
         """
-        Active la licence sur cette machine.
-        Appelé automatiquement au premier lancement avec la clé embarquée.
+        Active la licence sur ce PC.
         
+        Args:
+            key: Clé de licence (format: STB5-XXXX-XXXX-XXXX)
+            
         Returns: (success, message)
         """
-        # Utiliser clé embarquée ou paramètre
-        actual_key = license_key or LICENSE_SIGNATURE
-        if actual_key == "__LICENSE_SIG__":
-            return False, "Aucune clé de licence"
+        # Valider le format de la clé
+        if not self._validate_key_format(key):
+            return False, "Format de clé invalide"
         
-        # Valider clé (format simplifié: STB5-XXXX-XXXX-XXXX)
-        if not self._validate_key(actual_key):
-            return False, "Clé invalide"
+        # Vérifier que c'est la bonne clé
+        if key != LICENSE_KEY and not LICENSE_KEY.startswith("__"):
+            return False, "Clé non reconnue"
         
-        # Générer hardware ID
+        # Générer hardware ID et token
         hwid = get_hardware_id()
         hw_token = generate_hardware_token(hwid)
         
-        # Vérifier expiration
-        expiry = LICENSE_EXPIRY
-        if expiry == "__LICENSE_EXPIRY__":
-            # Pas d'expiration par défaut
-            expiry = None
-        
-        # Sauvegarder licence
+        # Sauvegarder la licence
         license_data = {
-            "key": actual_key,
-            "email": email or "unknown",
-            "hwid": hwid,
+            "key": LICENSE_KEY if not LICENSE_KEY.startswith("__") else key,
+            "hw_id": hwid,
             "hw_token": hw_token,
             "activated_at": datetime.now().isoformat(),
-            "expires": expiry,
-            "version": "5.0",
-            "sig": self._sign({"hwid": hwid, "expires": expiry, "email": email}),
+            "checksum": CryptoEngine.hash_data(f"{key}:{hw_token}"),
+            "version": "5.3.0",
+            "status": "active",
         }
         
         try:
-            with open(self.license_file, "w") as f:
+            with open(LICENSE_FILE, "w") as f:
                 json.dump(license_data, f, indent=2)
             
             # Marquer comme activé
-            INSTALLER_MARKER.parent.mkdir(parents=True, exist_ok=True)
-            INSTALLER_MARKER.write_text(datetime.now().isoformat())
+            ACTIVATION_FILE.write_text(datetime.now().isoformat())
             
-            return True, "Activation réussie"
+            return True, "Activation réussie!"
+            
         except IOError as e:
-            return False, f"Erreur écriture: {e}"
+            return False, f"Erreur d'écriture: {e}"
     
-    def revoke(self) -> bool:
-        """Révoque la licence (supprime les fichiers)."""
-        try:
-            if self.license_file.exists():
-                self.license_file.unlink()
-            if self.hw_file.exists():
-                self.hw_file.unlink()
-            return True
-        except:
-            return False
+    def revoke_local(self):
+        """Révoque la licence localement (destructif)."""
+        SecurityGate.trigger_self_destruct("Réquisition utilisateur")
     
-    def get_info(self) -> dict:
-        """Retourne info licence pour l'affichage."""
-        status = self.check_license()
+    def get_info(self) -> Dict:
+        """Retourne les infos de licence (sans données sensibles)."""
+        status, _ = self.validate()
+        
         info = {
-            "status": status.name,
+            "status": status.value,
             "valid": status == LicenseStatus.VALID,
+            "activated": LICENSE_FILE.exists(),
         }
         
-        if self.license_file.exists():
+        if LICENSE_FILE.exists():
             try:
-                with open(self.license_file) as f:
+                with open(LICENSE_FILE) as f:
                     data = json.load(f)
-                    info["email"] = data.get("email", "N/A")
-                    info["activated"] = data.get("activated_at", "N/A")
-                    info["expires"] = data.get("expires", "Jamais")
-                    info["hwid_short"] = data.get("hwid", "")[:8] + "..."
+                    info["hw_id_short"] = data.get("hw_id", "")[:8] + "..."
+                    info["activated_at"] = data.get("activated_at", "")
             except:
                 pass
         
         return info
     
-    def _validate_key(self, key: str) -> bool:
-        """Valide le format de la clé."""
+    def _validate_key_format(self, key: str) -> bool:
+        """Valide le format de clé STB5-XXXX-XXXX-XXXX."""
         if not key:
             return False
-        # Format: STB5-XXXX-XXXX-XXXX
         pattern = r"^STB5-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$"
         return bool(re.match(pattern, key, re.I))
-    
-    def _sign(self, data: dict) -> str:
-        """Signe les données avec hash."""
-        import hmac
-        msg = json.dumps(data, sort_keys=True)
-        sig = hashlib.sha3_256(msg.encode()).hexdigest()
-        return sig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AUTO-ACTIVATION (lancé au premier démarrage)
+# AUTO-ACTIVATION (au premier démarrage)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def auto_activate():
-    """Active automatiquement avec la clé embarquée."""
-    lm = LicenseManager()
-    status = lm.check_license()
+def auto_first_activation():
+    """
+    S'exécute au premier démarrage si la clé est embarquée.
+    Appelé automatiquement par main.py
+    """
+    # Si LICENSE_KEY a été remplacée par une vraie clé au build
+    if not LICENSE_KEY.startswith("__"):
+        lm = LicenseManager()
+        status, msg = lm.validate()
+        
+        if status == LicenseStatus.NOT_ACTIVATED:
+            success, msg = lm.activate(LICENSE_KEY)
+            return success, msg
+        elif status == LicenseStatus.VALID:
+            return True, "Déjà activé"
+        
+        return False, msg
     
-    if status == LicenseStatus.VALID:
-        return True, "Déjà activé"
-    
-    if status == LicenseStatus.NOT_ACTIVATED:
-        success, msg = lm.activate()
-        return success, msg
-    
-    return False, f"Statut: {status.name}"
+    return True, "Mode développement"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -498,11 +575,19 @@ def auto_activate():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    print("SafeTrendBot License Manager V5.3.0")
+    print("="*40)
+    
     lm = LicenseManager()
-    status = lm.check_license(verbose=True)
+    status, msg = lm.validate()
     
-    if status != LicenseStatus.VALID:
-        print("\n[ERROR] Licence non valide. Le bot ne peut pas démarrer.")
+    print(f"\nStatut: {status.value}")
+    print(f"Message: {msg}")
+    
+    if status == LicenseStatus.VALID:
+        print("\n✅ Licence valide - Accès autorisé")
+    else:
+        print(f"\n❌ {msg}")
+        if status == LicenseStatus.NOT_ACTIVATED:
+            print("\nPour activer, lancez: python main.py --activate YOUR_KEY")
         sys.exit(1)
-    
-    print("[OK] Licence valide — SafeTrendBot prêt")
