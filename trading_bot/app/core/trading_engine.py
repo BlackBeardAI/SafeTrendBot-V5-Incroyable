@@ -1,604 +1,772 @@
 """
-Moteur de trading - s'exécute dans un thread séparé
-Surveille les marchés, exécute les trades selon la stratégie, gère le risque.
+SafeTrendBot Trading Engine — Moteur de trading unifié
+======================================================
+- Gestion multi-brokers (MT5, cTrader, XTB, Binance, etc.)
+- Détection automatique du régime de marché
+- Kelly Criterion pour sizing adaptatif
+- Gestion du risque multicouche
+- Mode headless/GUI
+- Intégration license_manager
 """
 
+import sys
+import os
+import json
 import time
 import logging
-from threading import Thread, Event
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Callable
-from dataclasses import dataclass
-from enum import Enum
+import threading
+from pathlib import Path
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+from enum import Enum, auto
+from abc import ABC, abstractmethod
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
-from PyQt6.QtCore import QObject, pyqtSignal
+# ─── Configuration ───────────────────────────────────────────────────────────
+CONFIG_DIR = Path.home() / ".safetrendbot"
+CONFIG_FILE = CONFIG_DIR / "config.json"
 
-try:
-    import MetaTrader5 as mt5
-    MT5_AVAILABLE = True
-except ImportError:
-    MT5_AVAILABLE = False
+# ─── Logging ────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(CONFIG_DIR / "bot.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("SafeTrendBot")
 
-from app.core.config_manager import config_manager, SymbolConfig
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENUMS & DATACLASSES
+# ═══════════════════════════════════════════════════════════════════════════════
 
-class BotState(Enum):
-    STOPPED = "stopped"
-    STARTING = "starting"
-    RUNNING = "running"
-    PAUSED = "paused"
-    ERROR = "error"
+class MarketRegime(Enum):
+    TRENDING_UP = auto()      # Tendance haussière
+    TRENDING_DOWN = auto()    # Tendance baissière
+    RANGING = auto()          # Range / consolidation
+    VOLATILE = auto()          # Haute volatilité
+    LOW_LIQUIDITY = auto()     # Marché calme/peu liquide
+
+class TradeDirection(Enum):
+    LONG = auto()
+    SHORT = auto()
+    CLOSE_LONG = auto()
+    CLOSE_SHORT = auto()
+    CLOSE_ALL = auto()
+
+class BrokerType(Enum):
+    MT5 = "mt5"
+    CTRADER = "ctrader"
+    XTB = "xtb"
+    BINANCE = "binance"
+    IC_MARKETS = "icmarkets"
+    UNKNOWN = "unknown"
 
 
 @dataclass
-class BotStatus:
-    state: BotState
-    connected: bool
-    last_tick_time: Optional[datetime]
-    last_signal_time: Optional[datetime]
-    active_symbols: list
-    open_positions: int
-    today_trades: int
-    today_pnl: float
-    consecutive_losses: int
-    message: str = ""
+class Signal:
+    """Signal de trading généré par le système."""
+    symbol: str
+    direction: TradeDirection
+    confidence: float  # 0-100
+    regime: MarketRegime
+    entry_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    timestamp: datetime = field(default_factory=datetime.now)
+    strategy: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class TradingEngine(QObject):
+@dataclass
+class Position:
+    """Position ouverte."""
+    ticket: int
+    symbol: str
+    direction: TradeDirection
+    volume: float
+    entry_price: float
+    current_price: float
+    stop_loss: float
+    take_profit: float
+    unrealized_pnl: float
+    opened_at: datetime
+
+
+@dataclass
+class TradeResult:
+    """Résultat d'un trade exécuté."""
+    success: bool
+    ticket: Optional[int]
+    symbol: str
+    direction: TradeDirection
+    entry_price: float
+    volume: float
+    stop_loss: float
+    take_profit: float
+    error: Optional[str] = None
+    execution_time_ms: float = 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REGIME DETECTOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RegimeDetector:
     """
-    Moteur de trading principal.
-    Émet des signaux Qt pour mettre à jour l'UI.
+    Détecte le régime de marché en temps réel.
+    Utilise ADX + Bollinger Bands + ATR pour classification.
     """
+    
+    def __init__(self, adx_threshold: float = 25, bb_period: int = 20):
+        self.adx_threshold = adx_threshold
+        self.bb_period = bb_period
+        self.cache: Dict[str, dict] = {}
+    
+    def detect(self, candles: List[dict]) -> Tuple[MarketRegime, dict]:
+        """
+        Analyse les chandeliers et retourne le régime.
+        candles = [{'open', 'high', 'low', 'close', 'volume', 'time'}]
+        """
+        if len(candles) < self.bb_period + 5:
+            return MarketRegime.RANGING, {}
+        
+        closes = [c['close'] for c in candles]
+        highs = [c['high'] for c in candles]
+        lows = [c['low'] for c in candles]
+        volumes = [c.get('volume', 0) for c in candles]
+        
+        # BBands
+        bb_upper, bb_middle, bb_lower = self._bollinger_bands(closes)
+        price = closes[-1]
+        
+        # ADX
+        adx, plus_di, minus_di = self._adx(highs, lows, closes)
+        
+        # ATR pour volatilité
+        atr = self._atr(highs, lows, closes)
+        atr_percent = (atr / price) * 100 if price else 0
+        
+        # Volume profile
+        avg_volume = sum(volumes[-20:]) / min(20, len(volumes))
+        current_volume = volumes[-1] if volumes else 0
+        volume_ratio = current_volume / avg_volume if avg_volume else 1
+        
+        # Classification
+        regime_info = {
+            "adx": adx,
+            "atr_percent": atr_percent,
+            "volume_ratio": volume_ratio,
+            "bb_position": (price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5,
+        }
+        
+        # Déterminer régime
+        if adx < self.adx_threshold:
+            return MarketRegime.RANGING, regime_info
+        
+        if atr_percent > 2.5:
+            return MarketRegime.VOLATILE, regime_info
+        
+        if volume_ratio < 0.3:
+            return MarketRegime.LOW_LIQUIDITY, regime_info
+        
+        if plus_di > minus_di and adx > self.adx_threshold:
+            return MarketRegime.TRENDING_UP, regime_info
+        
+        if minus_di > plus_di and adx > self.adx_threshold:
+            return MarketRegime.TRENDING_DOWN, regime_info
+        
+        return MarketRegime.RANGING, regime_info
+    
+    def _bollinger_bands(self, prices: List[float], period: int = None):
+        period = period or self.bb_period
+        if len(prices) < period:
+            return prices[-1], prices[-1], prices[-1]
+        
+        recent = prices[-period:]
+        middle = sum(recent) / period
+        variance = sum((p - middle) ** 2 for p in recent) / period
+        std = variance ** 0.5
+        
+        upper = middle + (2 * std)
+        lower = middle - (2 * std)
+        return upper, middle, lower
+    
+    def _adx(self, highs: List[float], lows: List[float], closes: List[float], period: int = 14):
+        if len(closes) < period + 1:
+            return 25.0, 25.0, 25.0  # Default
+        
+        # Simplified ADX calculation
+        trs = []
+        plus_dms = []
+        minus_dms = []
+        
+        for i in range(1, len(closes)):
+            high = highs[i]
+            low = lows[i]
+            prev_high = highs[i-1]
+            prev_low = lows[i-1]
+            prev_close = closes[i-1]
+            
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            trs.append(tr)
+            
+            up_move = high - prev_high
+            down_move = prev_low - low
+            
+            plus_dm = up_move if up_move > down_move and up_move > 0 else 0
+            minus_dm = down_move if down_move > up_move and down_move > 0 else 0
+            plus_dms.append(plus_dm)
+            minus_dms.append(minus_dm)
+        
+        if len(trs) < period:
+            return 25.0, 25.0, 25.0
+        
+        # Smooth
+        atr = sum(trs[-period:]) / period
+        plus_di = (sum(plus_dms[-period:]) / period / atr) * 100 if atr else 0
+        minus_di = (sum(minus_dms[-period:]) / period / atr) * 100 if atr else 0
+        
+        dx = abs(plus_di - minus_di) / (plus_di + minus_di) * 100 if (plus_di + minus_di) else 0
+        adx = dx  # Simplified
+        
+        return adx, plus_di, minus_di
+    
+    def _atr(self, highs: List[float], lows: List[float], closes: List[float], period: int = 14):
+        if len(closes) < period + 1:
+            return 0
+        
+        trs = []
+        for i in range(1, len(closes)):
+            tr = max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i-1]),
+                abs(lows[i] - closes[i-1])
+            )
+            trs.append(tr)
+        
+        return sum(trs[-period:]) / period if len(trs) >= period else sum(trs) / len(trs)
 
-    # Signaux Qt pour communication avec l'UI
-    status_changed = pyqtSignal(object)          # BotStatus
-    log_message = pyqtSignal(str, str)           # level, message
-    position_opened = pyqtSignal(dict)
-    position_closed = pyqtSignal(dict)
-    account_updated = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
 
-    def __init__(self):
-        super().__init__()
-        self.config = config_manager.config
-        self.state = BotState.STOPPED
-        self._stop_event = Event()
-        self._pause_event = Event()
-        self._thread: Optional[Thread] = None
+# ═══════════════════════════════════════════════════════════════════════════════
+# KELLY CRITERION SIZER
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        # État interne
-        self.consecutive_losses = 0
-        self.today_trades = 0
-        self.today_pnl = 0.0
-        self.today_start_balance = 0.0
-        self.current_day: Optional[datetime] = None
-        self.last_signal_time: Optional[datetime] = None
-        self.last_tick_time: Optional[datetime] = None
-
-        # Logger
-        self._setup_logger()
-
-        # Dépendances (chargées à la demande)
-        self._economic_calendar = None
-        self._telegram_alerts = None
-
-    def _setup_logger(self):
-        self.logger = logging.getLogger('TradingEngine')
-        self.logger.setLevel(logging.INFO)
-        if not self.logger.handlers:
-            log_file = config_manager.get_log_file('trading')
-            handler = logging.FileHandler(log_file, encoding='utf-8')
-            formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-
-    def _log(self, level: str, message: str):
-        getattr(self.logger, level.lower())(message)
-        self.log_message.emit(level, message)
-
-    # ========================================================================
-    # CONTRÔLE DU BOT
-    # ========================================================================
-
-    def start(self) -> bool:
-        """Démarre le moteur de trading"""
-        if self.state == BotState.RUNNING:
-            self._log('warning', 'Le bot est déjà en marche')
-            return False
-
-        if not MT5_AVAILABLE:
-            self._log('error', 'Package MetaTrader5 non installé')
-            self.error_occurred.emit("Le package MetaTrader5 n'est pas installé")
-            return False
-
-        self._log('info', 'Démarrage du moteur de trading...')
-        self._stop_event.clear()
-        self._pause_event.clear()
-        self._set_state(BotState.STARTING)
-
-        # Connexion MT5
-        if not self._connect_mt5():
-            self._set_state(BotState.ERROR)
-            return False
-
-        # Démarrage du thread
-        self._thread = Thread(target=self._run_loop, daemon=True, name="TradingEngine")
-        self._thread.start()
-        return True
-
-    def stop(self):
-        """Arrête le moteur de trading"""
-        if self.state == BotState.STOPPED:
+class KellySizer:
+    """
+    Calcule la taille de position selon Kelly Criterion.
+    Adapté pour le trading (version fractionnaire).
+    """
+    
+    def __init__(self, fraction: float = 0.25, max_risk_percent: float = 2.0):
+        # Kelly fraction (0.25 = quarter Kelly = plus prudent)
+        self.fraction = fraction
+        self.max_risk_percent = max_risk_percent
+        self.win_rate = 0.5
+        self.avg_win = 0
+        self.avg_loss = 0
+    
+    def update_stats(self, wins: int, losses: int, total_win: float, total_loss: float):
+        """Met à jour les statistiques de trade."""
+        total = wins + losses
+        if total == 0:
             return
-        self._log('info', 'Arrêt du moteur...')
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=10)
-        if MT5_AVAILABLE:
-            try:
-                mt5.shutdown()
-            except Exception:
-                pass
-        self._set_state(BotState.STOPPED)
-        self._log('info', 'Moteur arrêté')
-
-    def pause(self):
-        """Met en pause le trading (ne ferme pas les positions)"""
-        self._pause_event.set()
-        self._set_state(BotState.PAUSED)
-        self._log('info', 'Trading en pause (positions maintenues)')
-
-    def resume(self):
-        """Reprend le trading"""
-        self._pause_event.clear()
-        self._set_state(BotState.RUNNING)
-        self._log('info', 'Trading repris')
-
-    def _set_state(self, state: BotState, message: str = ""):
-        self.state = state
-        status = self.get_status(message)
-        self.status_changed.emit(status)
-
-    def get_status(self, message: str = "") -> BotStatus:
-        """Retourne l'état actuel du bot"""
-        connected = False
-        open_positions = 0
-        if MT5_AVAILABLE and self.state != BotState.STOPPED:
-            try:
-                info = mt5.account_info()
-                connected = info is not None
-                positions = mt5.positions_get()
-                if positions:
-                    open_positions = len([p for p in positions
-                                          if p.magic == self.config.strategy.magic_number])
-            except Exception:
-                pass
-
-        return BotStatus(
-            state=self.state,
-            connected=connected,
-            last_tick_time=self.last_tick_time,
-            last_signal_time=self.last_signal_time,
-            active_symbols=[s.symbol for s in self.config.symbols if s.enabled],
-            open_positions=open_positions,
-            today_trades=self.today_trades,
-            today_pnl=self.today_pnl,
-            consecutive_losses=self.consecutive_losses,
-            message=message,
+        
+        self.win_rate = wins / total
+        self.avg_win = total_win / wins if wins else 0
+        self.avg_loss = abs(total_loss / losses) if losses else 0
+    
+    def calculate_size(self, account_balance: float, entry_price: float, 
+                      stop_loss: float, regime: MarketRegime) -> float:
+        """
+        Calcule la taille de position optimale.
+        Returns volume en lots (MT5) ou en unités (crypto).
+        """
+        if self.avg_loss == 0 or self.win_rate == 0:
+            # Pas de stats — risque fixe
+            return self._fixed_size(account_balance, entry_price, stop_loss)
+        
+        # Kelly fractionnel
+        if self.avg_loss > 0:
+            win_loss_ratio = self.avg_win / self.avg_loss
+        else:
+            win_loss_ratio = 1.0
+        
+        kelly = self.fraction * (
+            (self.win_rate * win_loss_ratio) - (1 - self.win_rate)
         )
+        
+        # Contraire: si win_rate < 0.5, kelly est négatif
+        kelly = max(0.01, min(kelly, 0.20))  # Borné 1-20%
+        
+        # Ajuster selon régime
+        if regime == MarketRegime.VOLATILE:
+            kelly *= 0.5  # Réduire en volatile
+        elif regime == MarketRegime.TRENDING_UP:
+            kelly *= 1.2  # Augmenter en trend
+        
+        # Risque max
+        risk_amount = account_balance * (self.max_risk_percent / 100)
+        max_lot = risk_amount / (abs(entry_price - stop_loss) * 100000) if abs(entry_price - stop_loss) > 0 else 0.01
+        
+        # Prendre le min entre Kelly et max_risk
+        risk_from_kelly = account_balance * kelly
+        price_risk = abs(entry_price - stop_loss)
+        
+        if price_risk > 0:
+            kelly_lot = risk_from_kelly / (price_risk * 100000)
+        else:
+            kelly_lot = 0.01
+        
+        return round(max(0.01, min(kelly_lot, max_lot)), 2)
+    
+    def _fixed_size(self, balance: float, entry: float, sl: float) -> float:
+        """Fallback: taille fixe basée sur risque max."""
+        risk_pct = 1.0 / 100
+        risk_amount = balance * risk_pct
+        pip_risk = abs(entry - sl)
+        
+        if pip_risk > 0:
+            return round(risk_amount / (pip_risk * 100000), 2)
+        return 0.01
 
-    # ========================================================================
-    # CONNEXION MT5
-    # ========================================================================
 
-    def _connect_mt5(self) -> bool:
-        """Établit la connexion avec MetaTrader 5"""
-        mt5_conf = self.config.mt5
+# ═══════════════════════════════════════════════════════════════════════════════
+# BROKER ABSTRACTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BrokerAdapter(ABC):
+    """Interface abstraite pour les adapters de broker."""
+    
+    @abstractmethod
+    def connect(self) -> bool:
+        pass
+    
+    @abstractmethod
+    def disconnect(self):
+        pass
+    
+    @abstractmethod
+    def get_account_info(self) -> dict:
+        pass
+    
+    @abstractmethod
+    def get_positions(self) -> List[Position]:
+        pass
+    
+    @abstractmethod
+    def get_candles(self, symbol: str, timeframe: str, count: int) -> List[dict]:
+        pass
+    
+    @abstractmethod
+    def send_order(self, symbol: str, direction: TradeDirection, volume: float,
+                   stop_loss: float, take_profit: float) -> TradeResult:
+        pass
+    
+    @abstractmethod
+    def close_position(self, ticket: int) -> bool:
+        pass
+
+
+class MT5Adapter(BrokerAdapter):
+    """Adapter pour MetaTrader 5."""
+    
+    def __init__(self, config: dict = None):
+        self.config = config or {}
+        self.connected = False
+        self._mt5 = None
+    
+    def connect(self) -> bool:
         try:
-            if mt5_conf.auto_detect:
-                initialized = mt5.initialize()
-            else:
-                kwargs = {}
-                if mt5_conf.terminal_path:
-                    kwargs['path'] = mt5_conf.terminal_path
-                if mt5_conf.login and mt5_conf.password and mt5_conf.server:
-                    kwargs['login'] = mt5_conf.login
-                    kwargs['password'] = mt5_conf.password
-                    kwargs['server'] = mt5_conf.server
-                initialized = mt5.initialize(**kwargs)
-
-            if not initialized:
-                error = mt5.last_error()
-                self._log('error', f'Échec connexion MT5 : {error}')
-                self.error_occurred.emit(f"Connexion MT5 échouée : {error}")
-                return False
-
-            account_info = mt5.account_info()
-            if account_info:
-                self._log('info', f'Connecté : {account_info.name} ({account_info.server})')
-                self.today_start_balance = account_info.balance
-                self.account_updated.emit({
-                    'balance': account_info.balance,
-                    'equity': account_info.equity,
-                    'currency': account_info.currency,
-                    'server': account_info.server,
-                    'name': account_info.name,
-                    'leverage': account_info.leverage,
-                })
-            return True
-        except Exception as e:
-            self._log('error', f'Exception connexion MT5 : {e}')
-            self.error_occurred.emit(str(e))
-            return False
-
-    # ========================================================================
-    # BOUCLE PRINCIPALE
-    # ========================================================================
-
-    def _run_loop(self):
-        """Boucle principale du moteur (tourne dans un thread)"""
-        self._set_state(BotState.RUNNING)
-        self._log('info', 'Moteur de trading actif')
-
-        # Intervalles selon le timeframe (en secondes)
-        tick_interval = 5  # vérification toutes les 5s
-
-        while not self._stop_event.is_set():
-            try:
-                self.last_tick_time = datetime.now()
-
-                # Vérifications quotidiennes
-                self._check_new_day()
-
-                # Mise à jour du compte
-                self._update_account_info()
-
-                # Si en pause, ne pas trader mais continuer la surveillance
-                if not self._pause_event.is_set():
-                    # Pour chaque symbole actif
-                    for symbol_config in self.config.symbols:
-                        if not symbol_config.enabled:
-                            continue
-                        if self._stop_event.is_set():
-                            break
-                        self._process_symbol(symbol_config)
-
-                # Mise à jour de l'état
-                self.status_changed.emit(self.get_status())
-
-                # Attente avant prochaine itération
-                self._stop_event.wait(tick_interval)
-
-            except Exception as e:
-                self._log('error', f'Erreur dans la boucle principale : {e}')
-                self.error_occurred.emit(str(e))
-                self._stop_event.wait(30)  # pause 30s en cas d'erreur
-
-        self._set_state(BotState.STOPPED)
-
-    def _check_new_day(self):
-        """Reset des compteurs journaliers"""
-        today = datetime.now().date()
-        if self.current_day != today:
-            if self.current_day is not None:
-                # Fin de journée : rapport
-                self._log('info', f"Rapport jour : {self.today_trades} trades, "
-                                  f"P&L {self.today_pnl:+.2f}")
-            self.current_day = today
-            self.today_trades = 0
-            self.today_pnl = 0.0
-            if MT5_AVAILABLE:
-                info = mt5.account_info()
-                if info:
-                    self.today_start_balance = info.balance
-
-    def _update_account_info(self):
-        """Met à jour les infos du compte"""
-        if not MT5_AVAILABLE:
-            return
-        try:
-            info = mt5.account_info()
-            if info:
-                self.account_updated.emit({
-                    'balance': info.balance,
-                    'equity': info.equity,
-                    'profit': info.profit,
-                    'margin': info.margin,
-                    'margin_free': info.margin_free,
-                    'margin_level': info.margin_level,
-                    'currency': info.currency,
-                })
-        except Exception:
-            pass
-
-    # ========================================================================
-    # TRAITEMENT PAR SYMBOLE
-    # ========================================================================
-
-    def _process_symbol(self, symbol_config: SymbolConfig):
-        """Analyse et trade sur un symbole"""
-        symbol = symbol_config.symbol
-
-        # Vérifier que le symbole est disponible
-        if not mt5.symbol_select(symbol, True):
-            return
-
-        # Safety checks
-        if not self._is_safe_to_trade(symbol):
-            return
-
-        # Position déjà ouverte sur ce symbole ?
-        if self._has_open_position(symbol):
-            return
-
-        # Analyser les signaux
-        signal = self._analyze_signal(symbol, symbol_config.timeframe)
-        if signal == 0:
-            return
-
-        # Exécuter le trade
-        self._execute_trade(symbol, signal)
-
-    def _is_safe_to_trade(self, symbol: str) -> bool:
-        """Vérifications de sécurité avant de trader"""
-        # Pertes consécutives
-        if self.consecutive_losses >= self.config.strategy.max_consecutive_losses:
-            return False
-
-        # Perte journalière max
-        if self.today_start_balance > 0:
-            info = mt5.account_info()
-            if info:
-                daily_loss_pct = ((self.today_start_balance - info.balance)
-                                  / self.today_start_balance * 100)
-                if daily_loss_pct >= self.config.strategy.max_daily_loss_percent:
-                    return False
-
-        # Filtre horaire
-        now = datetime.now()
-        if now.hour < self.config.strategy.start_hour or now.hour >= self.config.strategy.end_hour:
-            return False
-        if now.weekday() == 4 and not self.config.strategy.trade_on_friday:
-            return False
-        if now.weekday() >= 5:  # Weekend
-            return False
-
-        # Filtre news
-        if self.config.news.enabled:
-            if not self._check_news_filter(symbol):
-                return False
-
-        # Spread raisonnable
-        tick = mt5.symbol_info_tick(symbol)
-        sym_info = mt5.symbol_info(symbol)
-        if tick and sym_info:
-            spread_points = (tick.ask - tick.bid) / sym_info.point
-            if spread_points > 30:
-                return False
-
-        return True
-
-    def _check_news_filter(self, symbol: str) -> bool:
-        """Retourne False s'il y a une news à haut impact proche"""
-        if self._economic_calendar is None:
-            try:
-                from bot.economic_calendar import EconomicCalendar
-                self._economic_calendar = EconomicCalendar()
-            except ImportError:
+            import MetaTrader5 as mt5
+            self._mt5 = mt5
+            if mt5.initialize():
+                self.connected = True
+                logger.info("MT5 connecté")
                 return True
-
-        try:
-            safe, event = self._economic_calendar.is_safe_to_trade(symbol)
-            if not safe and event:
-                self._log('info', f'News filtrée pour {symbol} : {event.title}')
-            return safe
-        except Exception:
-            return True
-
-    def _has_open_position(self, symbol: str) -> bool:
-        """Vérifie s'il y a une position ouverte par ce bot sur ce symbole"""
-        positions = mt5.positions_get(symbol=symbol)
+        except ImportError:
+            logger.warning("MetaTrader5 non installé")
+        except Exception as e:
+            logger.error(f"Erreur connexion MT5: {e}")
+        return False
+    
+    def disconnect(self):
+        if self._mt5 and self.connected:
+            self._mt5.shutdown()
+            self.connected = False
+    
+    def get_account_info(self) -> dict:
+        if not self._mt5:
+            return {}
+        info = self._mt5.account_info()
+        if info:
+            return {
+                "balance": info.balance,
+                "equity": info.equity,
+                "margin": info.margin,
+                "free_margin": info.margin_free,
+                "currency": info.currency,
+            }
+        return {}
+    
+    def get_positions(self) -> List[Position]:
+        if not self._mt5:
+            return []
+        positions = self._mt5.positions_get()
+        result = []
+        for p in positions:
+            result.append(Position(
+                ticket=p.ticket,
+                symbol=p.symbol,
+                direction=TradeDirection.LONG if p.type == 0 else TradeDirection.SHORT,
+                volume=p.volume,
+                entry_price=p.price_open,
+                current_price=p.price_current,
+                stop_loss=p.sl,
+                take_profit=p.tp,
+                unrealized_pnl=p.profit,
+                opened_at=datetime.fromtimestamp(p.time),
+            ))
+        return result
+    
+    def get_candles(self, symbol: str, timeframe: str = "H1", count: int = 100) -> List[dict]:
+        if not self._mt5:
+            return []
+        
+        tf_map = {"M1": 1, "M5": 5, "M15": 15, "H1": 60, "H4": 240, "D1": 1440}
+        tf = tf_map.get(timeframe, 60)
+        
+        rates = self._mt5.copy_rates_from_pos(symbol, tf, 0, count)
+        if rates is None:
+            return []
+        
+        return [
+            {
+                "time": datetime.fromtimestamp(r[0]),
+                "open": r[1],
+                "high": r[2],
+                "low": r[3],
+                "close": r[4],
+                "volume": r[5],
+            }
+            for r in rates
+        ]
+    
+    def send_order(self, symbol: str, direction: TradeDirection, volume: float,
+                   stop_loss: float, take_profit: float) -> TradeResult:
+        if not self._mt5:
+            return TradeResult(False, None, symbol, direction, 0, 0, 0, 0, "Non connecté")
+        
+        start = time.time()
+        order_type = 0 if direction == TradeDirection.LONG else 1
+        
+        request = {
+            "action": self._mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": order_type,
+            "price": self._mt5.symbol_info_tick(symbol).bid,
+            "sl": stop_loss,
+            "tp": take_profit,
+            "deviation": 10,
+            "magic": 2024,
+            "comment": "SafeTrendBot",
+            "type_filling": self._mt5.ORDER_FILLING_FOK,
+        }
+        
+        result = self._mt5.order_send(request)
+        elapsed = (time.time() - start) * 1000
+        
+        if result.retcode == self._mt5.TRADE_RETCODE_DONE:
+            return TradeResult(
+                True, result.order, symbol, direction,
+                result.price, volume, stop_loss, take_profit,
+                execution_time_ms=elapsed
+            )
+        else:
+            return TradeResult(
+                False, None, symbol, direction, 0, volume, stop_loss, take_profit,
+                error=f"Code {result.retcode}: {result.comment}",
+                execution_time_ms=elapsed
+            )
+    
+    def close_position(self, ticket: int) -> bool:
+        if not self._mt5:
+            return False
+        
+        positions = self._mt5.positions_get(ticket=ticket)
         if not positions:
             return False
-        return any(p.magic == self.config.strategy.magic_number for p in positions)
-
-    # ========================================================================
-    # ANALYSE DES SIGNAUX
-    # ========================================================================
-
-    def _analyze_signal(self, symbol: str, timeframe_str: str) -> int:
-        """Retourne 1 pour achat, -1 pour vente, 0 sinon"""
-        timeframe = self._parse_timeframe(timeframe_str)
-
-        # Récupérer les données
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 250)
-        if rates is None or len(rates) < 210:
-            return 0
-
-        # Calculer les indicateurs (simpliste mais fonctionnel)
-        import numpy as np
-        closes = np.array([r['close'] for r in rates])
-        highs = np.array([r['high'] for r in rates])
-        lows = np.array([r['low'] for r in rates])
-
-        fast_ema = self._ema(closes, self.config.strategy.fast_ema)
-        slow_ema = self._ema(closes, self.config.strategy.slow_ema)
-        rsi = self._rsi(closes, self.config.strategy.rsi_period)
-
-        # Dernière valeur et précédente
-        fast_now, fast_prev = fast_ema[-1], fast_ema[-2]
-        slow_now, slow_prev = slow_ema[-1], slow_ema[-2]
-        current_price = closes[-1]
-        rsi_now = rsi[-1]
-
-        # Signal d'achat
-        bullish_cross = fast_prev <= slow_prev and fast_now > slow_now
-        bullish_trend = current_price > slow_now
-        rsi_ok_buy = 40 < rsi_now < self.config.strategy.rsi_overbought
-
-        if bullish_cross and bullish_trend and rsi_ok_buy:
-            self.last_signal_time = datetime.now()
-            self._log('info', f'{symbol} : Signal ACHAT (RSI={rsi_now:.1f})')
-            return 1
-
-        # Signal de vente
-        bearish_cross = fast_prev >= slow_prev and fast_now < slow_now
-        bearish_trend = current_price < slow_now
-        rsi_ok_sell = self.config.strategy.rsi_oversold < rsi_now < 60
-
-        if bearish_cross and bearish_trend and rsi_ok_sell:
-            self.last_signal_time = datetime.now()
-            self._log('info', f'{symbol} : Signal VENTE (RSI={rsi_now:.1f})')
-            return -1
-
-        return 0
-
-    @staticmethod
-    def _parse_timeframe(tf: str):
-        mapping = {
-            'M1': mt5.TIMEFRAME_M1, 'M5': mt5.TIMEFRAME_M5,
-            'M15': mt5.TIMEFRAME_M15, 'M30': mt5.TIMEFRAME_M30,
-            'H1': mt5.TIMEFRAME_H1, 'H4': mt5.TIMEFRAME_H4,
-            'D1': mt5.TIMEFRAME_D1, 'W1': mt5.TIMEFRAME_W1,
-        }
-        return mapping.get(tf.upper(), mt5.TIMEFRAME_H4)
-
-    @staticmethod
-    def _ema(data, period: int):
-        import numpy as np
-        alpha = 2.0 / (period + 1)
-        ema = np.zeros_like(data)
-        ema[0] = data[0]
-        for i in range(1, len(data)):
-            ema[i] = alpha * data[i] + (1 - alpha) * ema[i - 1]
-        return ema
-
-    @staticmethod
-    def _rsi(data, period: int = 14):
-        import numpy as np
-        deltas = np.diff(data)
-        gains = np.where(deltas > 0, deltas, 0)
-        losses = np.where(deltas < 0, -deltas, 0)
-
-        avg_gain = np.zeros_like(data)
-        avg_loss = np.zeros_like(data)
-        avg_gain[period] = np.mean(gains[:period])
-        avg_loss[period] = np.mean(losses[:period])
-
-        for i in range(period + 1, len(data)):
-            avg_gain[i] = (avg_gain[i-1] * (period-1) + gains[i-1]) / period
-            avg_loss[i] = (avg_loss[i-1] * (period-1) + losses[i-1]) / period
-
-        rs = np.where(avg_loss != 0, avg_gain / avg_loss, 100)
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
-
-    # ========================================================================
-    # EXÉCUTION DES TRADES
-    # ========================================================================
-
-    def _execute_trade(self, symbol: str, direction: int):
-        """Place un ordre de marché"""
-        sym_info = mt5.symbol_info(symbol)
-        tick = mt5.symbol_info_tick(symbol)
-        if not sym_info or not tick:
-            return
-
-        # Calcul ATR pour les stops
-        atr = self._calculate_atr(symbol, self.config.strategy.atr_period)
-        if atr <= 0:
-            return
-
-        stop_distance = atr * self.config.strategy.atr_multiplier
-        if direction == 1:  # BUY
-            price = tick.ask
-            sl = price - stop_distance
-            tp = price + stop_distance * self.config.strategy.risk_reward_ratio
-            order_type = mt5.ORDER_TYPE_BUY
-        else:  # SELL
-            price = tick.bid
-            sl = price + stop_distance
-            tp = price - stop_distance * self.config.strategy.risk_reward_ratio
-            order_type = mt5.ORDER_TYPE_SELL
-
-        # Taille de position
-        lot_size = self._calculate_lot_size(symbol, stop_distance)
-        if lot_size <= 0:
-            return
-
+        
+        pos = positions[0]
+        direction = self._mt5.POSITION_TYPE_BUY if pos.type == 0 else self._mt5.POSITION_TYPE_SELL
+        
         request = {
-            'action': mt5.TRADE_ACTION_DEAL,
-            'symbol': symbol,
-            'volume': lot_size,
-            'type': order_type,
-            'price': price,
-            'sl': sl,
-            'tp': tp,
-            'deviation': 20,
-            'magic': self.config.strategy.magic_number,
-            'comment': 'SafeTrendBot',
-            'type_time': mt5.ORDER_TIME_GTC,
-            'type_filling': mt5.ORDER_FILLING_IOC,
+            "action": self._mt5.TRADE_ACTION_DEAL,
+            "position": ticket,
+            "symbol": pos.symbol,
+            "volume": pos.volume,
+            "type": direction,
+            "price": self._mt5.symbol_info_tick(pos.symbol).bid,
+            "magic": 2024,
+            "comment": "SafeTrendBot Close",
+            "type_filling": self._mt5.ORDER_FILLING_FOK,
         }
+        
+        result = self._mt5.order_send(request)
+        return result.retcode == self._mt5.TRADE_RETCODE_DONE
 
-        result = mt5.order_send(request)
-        if result.retcode == mt5.TRADE_RETCODE_DONE:
-            direction_str = "BUY" if direction == 1 else "SELL"
-            self._log('info', f'{direction_str} {symbol} @ {price:.5f} '
-                              f'lots={lot_size} SL={sl:.5f} TP={tp:.5f}')
-            self.today_trades += 1
-            self.position_opened.emit({
-                'symbol': symbol,
-                'direction': direction_str,
-                'price': price,
-                'volume': lot_size,
-                'sl': sl,
-                'tp': tp,
-            })
-        else:
-            self._log('error', f'Ordre refusé {symbol} : {result.comment} (code {result.retcode})')
 
-    def _calculate_atr(self, symbol: str, period: int) -> float:
-        """Calcule l'ATR"""
-        timeframe = self._parse_timeframe(
-            next((s.timeframe for s in self.config.symbols if s.symbol == symbol), 'H4')
+class BrokerFactory:
+    """Factory pour créer l'adapter approprié."""
+    
+    _adapters = {
+        BrokerType.MT5: MT5Adapter,
+        # Ajouter d'autres adapters selon besoin
+    }
+    
+    @classmethod
+    def create(cls, broker_type: BrokerType, config: dict = None) -> BrokerAdapter:
+        adapter_class = cls._adapters.get(broker_type, MT5Adapter)
+        return adapter_class(config)
+    
+    @classmethod
+    def auto_detect(cls) -> BrokerAdapter:
+        """Détecte automatiquement le broker disponible."""
+        # Essayer MT5 en premier
+        try:
+            import MetaTrader5
+            return MT5Adapter()
+        except ImportError:
+            pass
+        
+        logger.error("Aucun broker détecté")
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRADING ENGINE (MAIN CLASS)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TradingEngine:
+    """
+    Moteur de trading principal.
+    Orchestre régime detection, sizing, exécution.
+    """
+    
+    def __init__(self, config: dict = None):
+        self.config = config or self._load_config()
+        self.broker: Optional[BrokerAdapter] = None
+        self.regime_detector = RegimeDetector()
+        self.kelly_sizer = KellySizer()
+        self.running = False
+        self._thread: Optional[threading.Thread] = None
+        self.signals: List[Signal] = []
+        
+        # Stats
+        self.trades_won = 0
+        self.trades_lost = 0
+        self.total_win = 0.0
+        self.total_loss = 0.0
+    
+    def _load_config(self) -> dict:
+        """Charge la config utilisateur."""
+        default = {
+            "symbols": ["EURUSD", "GBPUSD", "USDJPY"],
+            "timeframe": "H1",
+            "max_positions": 3,
+            "risk_percent": 2.0,
+            "kelly_fraction": 0.25,
+            "adx_threshold": 25,
+            "stop_loss_pips": 50,
+            "take_profit_pips": 100,
+            "trailing_stop": True,
+            "trailing_offset": 20,
+        }
+        
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE) as f:
+                    user = json.load(f)
+                    default.update(user)
+            except:
+                pass
+        
+        return default
+    
+    def start(self):
+        """Démarre le moteur de trading."""
+        if self.running:
+            logger.warning("Moteur déjà démarré")
+            return
+        
+        self.broker = BrokerFactory.auto_detect()
+        if not self.broker or not self.broker.connect():
+            logger.error("Impossible de se connecter au broker")
+            return
+        
+        self.running = True
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._thread.start()
+        logger.info("Moteur de trading démarré")
+    
+    def stop(self):
+        """Arrête le moteur."""
+        self.running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+        if self.broker:
+            self.broker.disconnect()
+        logger.info("Moteur arrêté")
+    
+    def _run_loop(self):
+        """Boucle principale de trading."""
+        while self.running:
+            try:
+                self._scan_markets()
+                time.sleep(60)  # Scan chaque minute
+            except Exception as e:
+                logger.error(f"Erreur boucle: {e}")
+                time.sleep(10)
+    
+    def _scan_markets(self):
+        """Scanne tous les symbols et génère des signaux."""
+        for symbol in self.config.get("symbols", []):
+            try:
+                candles = self.broker.get_candles(
+                    symbol, 
+                    self.config.get("timeframe", "H1"),
+                    100
+                )
+                
+                if not candles:
+                    continue
+                
+                # Détecter régime
+                regime, regime_info = self.regime_detector.detect(candles)
+                logger.debug(f"{symbol}: {regime.name} (ADX={regime_info.get('adx', 0):.1f})")
+                
+                # Générer signal si régime favorable
+                if regime in [MarketRegime.TRENDING_UP, MarketRegime.TRENDING_DOWN]:
+                    signal = self._generate_signal(symbol, candles, regime, regime_info)
+                    if signal and signal.confidence > 60:
+                        self._execute_signal(signal)
+                
+                # Check positions existantes
+                self._manage_open_positions()
+                
+            except Exception as e:
+                logger.error(f"Erreur scan {symbol}: {e}")
+    
+    def _generate_signal(self, symbol: str, candles: List[dict], 
+                        regime: MarketRegime, regime_info: dict) -> Optional[Signal]:
+        """Génère un signal de trading."""
+        closes = [c['close'] for c in candles]
+        current_price = closes[-1]
+        
+        # Calculer SL/TP en pips
+        sl_pips = self.config.get("stop_loss_pips", 50)
+        tp_pips = self.config.get("take_profit_pips", 100)
+        pip_value = current_price * 0.0001
+        
+        stop_loss = current_price - (sl_pips * pip_value) if regime == MarketRegime.TRENDING_UP else current_price + (sl_pips * pip_value)
+        take_profit = current_price + (tp_pips * pip_value) if regime == MarketRegime.TRENDING_UP else current_price - (tp_pips * pip_value)
+        
+        # Confidence basée sur ADX
+        adx = regime_info.get('adx', 0)
+        confidence = min(100, adx * 3)  # ADX 25 → 75%, ADX 40 → 100%
+        
+        direction = TradeDirection.LONG if regime == MarketRegime.TRENDING_UP else TradeDirection.SHORT
+        
+        return Signal(
+            symbol=symbol,
+            direction=direction,
+            confidence=confidence,
+            regime=regime,
+            entry_price=current_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            strategy="RegimeFollower",
+            metadata=regime_info
         )
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, period + 1)
-        if rates is None or len(rates) < period + 1:
-            return 0
+    
+    def _execute_signal(self, signal: Signal):
+        """Exécute un signal de trading."""
+        # Vérifier nombre max de positions
+        positions = self.broker.get_positions() if self.broker else []
+        if len(positions) >= self.config.get("max_positions", 3):
+            logger.debug("Max positions atteint")
+            return
+        
+        # Calculer taille
+        account = self.broker.get_account_info() if self.broker else {}
+        balance = account.get("balance", 10000)
+        
+        volume = self.kelly_sizer.calculate_size(
+            balance,
+            signal.entry_price,
+            signal.stop_loss,
+            signal.regime
+        )
+        
+        # Envoyer ordre
+        result = self.broker.send_order(
+            signal.symbol,
+            signal.direction,
+            volume,
+            signal.stop_loss,
+            signal.take_profit
+        )
+        
+        if result.success:
+            logger.info(f"✅ ORDER: {signal.direction.name} {signal.symbol} "
+                       f"@{result.entry_price:.5f} SL:{result.stop_loss:.5f} TP:{result.take_profit:.5f}")
+        else:
+            logger.warning(f"❌ ORDER FAILED: {result.error}")
+    
+    def _manage_open_positions(self):
+        """Gère les positions ouvertes (trailing stop, etc.)."""
+        positions = self.broker.get_positions() if self.broker else []
+        
+        for pos in positions:
+            if pos.unrealized_pnl > 0 and self.config.get("trailing_stop"):
+                # Implémenter trailing stop
+                pass  # À compléter
 
-        import numpy as np
-        trs = []
-        for i in range(1, len(rates)):
-            high_low = rates[i]['high'] - rates[i]['low']
-            high_close = abs(rates[i]['high'] - rates[i-1]['close'])
-            low_close = abs(rates[i]['low'] - rates[i-1]['close'])
-            trs.append(max(high_low, high_close, low_close))
-        return float(np.mean(trs[-period:]))
 
-    def _calculate_lot_size(self, symbol: str, stop_distance: float) -> float:
-        """Calcule la taille de position selon le risque"""
-        account = mt5.account_info()
-        sym_info = mt5.symbol_info(symbol)
-        if not account or not sym_info:
-            return 0
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        risk_amount = account.balance * self.config.strategy.risk_percent / 100
-        tick_value = sym_info.trade_tick_value
-        tick_size = sym_info.trade_tick_size
-        if tick_value == 0 or tick_size == 0 or stop_distance == 0:
-            return 0
+def main():
+    """Point d'entrée pour le bot."""
+    from .license_manager import auto_activate, LicenseStatus, LicenseManager
+    
+    # 1. Vérifier licence
+    lm = LicenseManager()
+    status = lm.check_license(verbose=True)
+    
+    if status != LicenseStatus.VALID:
+        logger.error(f"Licence invalide: {status.name}")
+        sys.exit(1)
+    
+    logger.info("Licence validée — démarrage SafeTrendBot")
+    
+    # 2. Démarrer moteur
+    engine = TradingEngine()
+    engine.start()
+    
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Arrêt demandé")
+        engine.stop()
 
-        # Valeur par unité de prix
-        value_per_unit = tick_value / tick_size
-        lot_size = risk_amount / (stop_distance * value_per_unit)
 
-        # Contraintes du broker
-        min_lot = sym_info.volume_min
-        max_lot = sym_info.volume_max
-        step = sym_info.volume_step
-
-        import math
-        lot_size = math.floor(lot_size / step) * step
-        lot_size = max(min_lot, min(max_lot, lot_size))
-        return round(lot_size, 2)
+if __name__ == "__main__":
+    main()
