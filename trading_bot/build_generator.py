@@ -725,27 +725,44 @@ class BuildGeneratorGUI:
         
         # Lancer le build en arrière-plan
         self.window.after(100, self._do_build, config)
-        
+    
     def _do_build(self, config):
         """Effectue le build."""
         builder = ExeBuilder(config)
-        
+
         def progress_callback(msg):
             self.window.after(0, lambda: self.status.config(text=msg))
-        
+
         success, result = builder.build(progress_callback)
-        
+
         self.progress.stop()
         self.build_btn.config(state='normal', text="🚀 GÉNÉRER LE BUILD")
-        
+
         if success:
+            # === ENREGISTRER LE CLIENT AUTOMATIQUEMENT ===
+            try:
+                from client_manager import ClientManager
+                cm = ClientManager()
+                cm.add_client(
+                    name=config.client_name or "Client",
+                    license_key=config.license_key,
+                    sale_price_usd=297.0,
+                    payment_method="crypto",
+                    build_file=result,
+                    build_version=config.version,
+                )
+                client_saved = "✅ Client enregistré dans la base"
+            except Exception as e:
+                client_saved = f"⚠️ Client non enregistré: {e}"
+
             messagebox.showinfo(
                 "✅ Build Terminé!",
-                f"Le fichier a été créé:\n\n{result}\n\n"
-                f"Clé de licence: {config.license_key}\n\n"
-                f"Copiez ce fichier et envoyez-le au client!"
+                f"Fichier créé:\n{result}\n\n"
+                f"🔑 Clé de licence: {config.license_key}\n\n"
+                f"{client_saved}\n\n"
+                f"Envoyez le fichier au client!"
             )
-            self.status.config(text=f"✅ Build terminé: {Path(result).name}")
+            self.status.config(text="✅ Build + client enregistré")
         else:
             messagebox.showerror("❌ Erreur", result)
             self.status.config(text=f"❌ Erreur: {result}")
