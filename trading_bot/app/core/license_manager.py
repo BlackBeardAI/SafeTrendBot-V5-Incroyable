@@ -47,6 +47,9 @@ HARDWARE_SALT = b"SafeTrendBot_v5_2024"
 LICENSE_SIGNATURE = "__LICENSE_SIG__"
 LICENSE_EXPIRY = "__LICENSE_EXPIRY__"
 
+# Pour vente directe (sans expiration) - pas de limite de temps
+LICENSE_PERMANENT = True
+
 
 class LicenseStatus(Enum):
     VALID = auto()          # ✅ Prêt à trader
