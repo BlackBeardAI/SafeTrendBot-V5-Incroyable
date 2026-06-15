@@ -1,399 +1,629 @@
 """
-Adapter crypto unifié pour les principaux exchanges via la lib ccxt.
-Supporte Binance, Bybit, Kraken, Coinbase et 100+ autres exchanges
-avec une API unique.
+SafeTrendBot — Binance Adapter
+===============================
+Adapter pour Binance (Spot et Futures).
+Utilise l'API REST + WebSocket streams.
 
-Statut : 🟡 EXPERIMENTAL - ccxt est mature mais chaque exchange a ses spécificités.
-
-PRÉREQUIS : pip install ccxt
+Documentation: https://developers.binance.com/
 """
 
-from datetime import datetime
-from typing import Optional, List, Dict
+import sys
 import time
+import hmac
+import hashlib
+import logging
+import threading
+import asyncio
+import json
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from enum import Enum
 
-try:
-    import ccxt
-    CCXT_AVAILABLE = True
-except ImportError:
-    CCXT_AVAILABLE = False
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.brokers.broker_adapter import (
-    BrokerAdapter, BrokerType, BrokerCapabilities,
-    AccountInfo, SymbolInfo, Tick, Candle, Position, OrderType, OrderResult,
-    BrokerNotInstalledError, get_broker_capabilities
+from app.core.trading_engine import (
+    BrokerAdapter, TradeDirection, Position, TradeResult
 )
 
-
-# Mapping timeframes vers format ccxt
-CCXT_TIMEFRAMES = {
-    'M1': '1m', 'M5': '5m', 'M15': '15m', 'M30': '30m',
-    'H1': '1h', 'H4': '4h', 'D1': '1d', 'W1': '1w', 'MN1': '1M',
-}
+logger = logging.getLogger("Binance")
 
 
-class CryptoAdapter(BrokerAdapter):
-    """
-    Adapter générique pour exchanges crypto via ccxt.
-    Sous-classes : BinanceAdapter, BybitAdapter, KrakenAdapter, CoinbaseAdapter.
-    """
+# ═══════════════════════════════════════════════════════════════════════════════
+# BINANCE TYPES
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    exchange_id: str = ""  # ccxt exchange id, ex: 'binance'
+class BinanceEnv(Enum):
+    """Environnement Binance."""
+    SPOT = "https://api.binance.com"
+    FUTURES_USDM = "https://fapi.binance.com"
+    FUTURES_COIN = "https://dapi.binance.com"
 
-    def __init__(self):
-        if not CCXT_AVAILABLE:
-            raise BrokerNotInstalledError(
-                "ccxt non installé. Installez avec : pip install ccxt"
-            )
-        self.capabilities = get_broker_capabilities(self.broker_type)
-        self.exchange = None
-        self._last_error = ""
 
-    def connect(self, api_key: str = "", api_secret: str = "",
-                passphrase: str = "", sandbox: bool = False,
-                **kwargs) -> bool:
-        """
-        Connecte à l'exchange crypto.
+class BinanceMode(Enum):
+    """Mode de trading."""
+    SPOT = "spot"
+    USD_M_FUTURES = "futures_usdm"
+    COIN_M_FUTURES = "futures_coin"
 
-        Args:
-            api_key: Clé API obtenue sur l'exchange
-            api_secret: Secret API
-            passphrase: Passphrase (seulement Coinbase Pro)
-            sandbox: Utiliser le mode testnet si disponible
-        """
-        if not api_key or not api_secret:
-            self._last_error = "api_key et api_secret requis"
-            return False
 
-        try:
-            exchange_class = getattr(ccxt, self.exchange_id)
-            config = {
-                'apiKey': api_key,
-                'secret': api_secret,
-                'enableRateLimit': True,
-            }
-            if passphrase:
-                config['password'] = passphrase
-            if sandbox:
-                config['options'] = {'defaultType': 'spot'}
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
 
-            self.exchange = exchange_class(config)
-
-            if sandbox:
-                try:
-                    self.exchange.set_sandbox_mode(True)
-                except Exception:
-                    pass
-
-            # Test la connexion en chargeant les marchés
-            self.exchange.load_markets()
-            # Test le compte
-            self.exchange.fetch_balance()
-            return True
-        except Exception as e:
-            self._last_error = str(e)
-            self.exchange = None
-            return False
-
-    def disconnect(self):
-        self.exchange = None
-
-    def is_connected(self) -> bool:
-        if self.exchange is None:
-            return False
-        try:
-            self.exchange.fetch_time()
-            return True
-        except Exception:
-            return False
-
-    def get_last_error(self) -> str:
-        return self._last_error
-
-    # ========================================================================
-    # COMPTE
-    # ========================================================================
-
-    def get_account_info(self) -> Optional[AccountInfo]:
-        if self.exchange is None:
-            return None
-        try:
-            balance = self.exchange.fetch_balance()
-            # Pour les exchanges crypto, on cherche la devise principale (USDT, USD, EUR)
-            # et on agrège la valeur totale
-            total_usdt = 0.0
-            for currency in ('USDT', 'USD', 'USDC', 'EUR'):
-                if currency in balance['total']:
-                    total_usdt = balance['total'][currency]
-                    if total_usdt > 0:
-                        break
-
-            # Fallback : prendre la première devise avec un solde
-            if total_usdt == 0:
-                for curr, amount in balance['total'].items():
-                    if amount and amount > 0:
-                        total_usdt = amount
-                        break
-
-            return AccountInfo(
-                name=f"{self.capabilities.name} Account",
-                server=self.capabilities.name,
-                currency="USDT",
-                balance=total_usdt,
-                equity=total_usdt,
-                profit=0,
-                margin=0,
-                margin_free=total_usdt,
-                margin_level=100.0,
-                leverage=1,
-                broker_type=self.broker_type,
-            )
-        except Exception as e:
-            self._last_error = str(e)
-            return None
-
-    # ========================================================================
-    # SYMBOLES
-    # ========================================================================
-
-    @staticmethod
-    def _normalize_symbol(symbol: str) -> str:
-        """Convertit EURUSD ou BTCUSDT en BTC/USDT pour ccxt"""
-        if '/' in symbol:
-            return symbol.upper()
-        # Essayer de deviner : BTCUSDT -> BTC/USDT
-        common_quotes = ['USDT', 'USDC', 'USD', 'EUR', 'BTC', 'ETH', 'BUSD']
-        symbol = symbol.upper()
-        for quote in common_quotes:
-            if symbol.endswith(quote):
-                base = symbol[:-len(quote)]
-                if base:
-                    return f"{base}/{quote}"
-        return symbol
-
-    def get_symbol_info(self, symbol: str) -> Optional[SymbolInfo]:
-        if self.exchange is None:
-            return None
-        sym = self._normalize_symbol(symbol)
-        try:
-            markets = self.exchange.markets
-            if sym not in markets:
-                self._last_error = f"Symbole introuvable : {sym}"
-                return None
-            m = markets[sym]
-            precision_price = m.get('precision', {}).get('price', 2)
-            precision_amount = m.get('precision', {}).get('amount', 6)
-            # ccxt précision peut être int (nombre décimales) ou float (tick size)
-            if isinstance(precision_price, float):
-                digits = max(0, int(-1 * (precision_price).as_integer_ratio()[1].bit_length() * 0.301))
-                tick_size = precision_price
+@dataclass
+class BinanceConfig:
+    """Configuration Binance."""
+    # Clés API
+    api_key: str = ""
+    api_secret: str = ""
+    
+    # Environnement
+    mode: BinanceMode = BinanceMode.SPOT
+    
+    # Proxy (optionnel)
+    proxy_host: Optional[str] = None
+    proxy_port: Optional[int] = None
+    
+    # Testnet
+    testnet: bool = True
+    
+    # Endpoints
+    @property
+    def base_url(self) -> str:
+        if self.testnet:
+            if self.mode == BinanceMode.SPOT:
+                return "https://testnet.binance.vision/api"
+            elif self.mode == BinanceMode.USD_M_FUTURES:
+                return "https://testnet.binancefuture.com/fapi"
             else:
-                digits = int(precision_price)
-                tick_size = 10 ** -digits
+                return "https://testnet.binancefuture.com/dapi"
+        else:
+            return self.mode.value
 
-            limits = m.get('limits', {})
-            vol_limits = limits.get('amount', {})
 
-            return SymbolInfo(
-                symbol=sym,
-                description=m.get('id', sym),
-                digits=digits,
-                point=tick_size,
-                tick_size=tick_size,
-                tick_value=1.0,
-                contract_size=1,
-                volume_min=vol_limits.get('min', 0.0001) or 0.0001,
-                volume_max=vol_limits.get('max', 1000000) or 1000000,
-                volume_step=10 ** -precision_amount if isinstance(precision_amount, int) else precision_amount,
-                spread=0,
-                currency_base=m.get('base', ''),
-                currency_profit=m.get('quote', ''),
-            )
-        except Exception as e:
-            self._last_error = str(e)
-            return None
+# ═══════════════════════════════════════════════════════════════════════════════
+# BINANCE HTTP CLIENT
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    def get_tick(self, symbol: str) -> Optional[Tick]:
-        if self.exchange is None:
-            return None
-        sym = self._normalize_symbol(symbol)
+class BinanceHTTP:
+    """Client HTTP pour l'API Binance REST."""
+    
+    def __init__(self, config: BinanceConfig):
+        self.config = config
+        self.session = None
+        
         try:
-            ticker = self.exchange.fetch_ticker(sym)
-            return Tick(
-                symbol=symbol,
-                bid=ticker.get('bid', 0) or ticker.get('last', 0),
-                ask=ticker.get('ask', 0) or ticker.get('last', 0),
-                time=datetime.fromtimestamp((ticker.get('timestamp') or time.time() * 1000) / 1000),
-                volume=int(ticker.get('quoteVolume', 0) or 0),
-            )
-        except Exception as e:
-            self._last_error = str(e)
+            import requests
+            self._requests = requests
+        except ImportError:
+            logger.warning("requests non installé")
+            self._requests = None
+    
+    def _sign(self, params: dict) -> dict:
+        """Signe les paramètres avec la clé secrète."""
+        if not self.config.api_secret:
+            return params
+        
+        params["timestamp"] = int(time.time() * 1000)
+        params["recvWindow"] = 5000
+        
+        query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        signature = hmac.new(
+            self.config.api_secret.encode(),
+            query.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        params["signature"] = signature
+        return params
+    
+    def _headers(self) -> dict:
+        """Headers par défaut."""
+        headers = {"Content-Type": "application/json"}
+        if self.config.api_key:
+            headers["X-MBX-APIKEY"] = self.config.api_key
+        return headers
+    
+    def get(self, endpoint: str, params: dict = None) -> Optional[dict]:
+        """GET request."""
+        if not self._requests:
             return None
-
-    def get_candles(self, symbol: str, timeframe: str,
-                    count: int) -> Optional[List[Candle]]:
-        if self.exchange is None:
-            return None
-        sym = self._normalize_symbol(symbol)
-        tf = CCXT_TIMEFRAMES.get(timeframe.upper())
-        if tf is None:
-            self._last_error = f"Timeframe invalide : {timeframe}"
-            return None
+        
         try:
-            ohlcv = self.exchange.fetch_ohlcv(sym, timeframe=tf, limit=count)
-            return [
-                Candle(
-                    time=datetime.fromtimestamp(c[0] / 1000),
-                    open=c[1], high=c[2], low=c[3], close=c[4],
-                    volume=int(c[5]),
-                )
-                for c in ohlcv
-            ]
+            url = f"{self.config.base_url}{endpoint}"
+            response = self._requests.get(
+                url,
+                params=params,
+                headers=self._headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Binance GET error: {response.status_code} - {response.text}")
+                return None
+                
         except Exception as e:
-            self._last_error = str(e)
+            logger.error(f"Binance GET exception: {e}")
+            return None
+    
+    def post(self, endpoint: str, params: dict = None) -> Optional[dict]:
+        """POST request (signé)."""
+        if not self._requests:
+            return None
+        
+        try:
+            url = f"{self.config.base_url}{endpoint}"
+            params = params or {}
+            params = self._sign(params)
+            
+            response = self._requests.post(
+                url,
+                params=params,
+                headers=self._headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Binance POST error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Binance POST exception: {e}")
+            return None
+    
+    def delete(self, endpoint: str, params: dict = None) -> Optional[dict]:
+        """DELETE request (signé)."""
+        if not self._requests:
+            return None
+        
+        try:
+            url = f"{self.config.base_url}{endpoint}"
+            params = params or {}
+            params = self._sign(params)
+            
+            response = self._requests.delete(
+                url,
+                params=params,
+                headers=self._headers(),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Binance DELETE error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Binance DELETE exception: {e}")
             return None
 
-    def select_symbol(self, symbol: str) -> bool:
-        sym = self._normalize_symbol(symbol)
-        return self.exchange is not None and sym in self.exchange.markets
 
-    def list_available_symbols(self) -> List[str]:
-        if self.exchange is None:
-            return []
-        return list(self.exchange.markets.keys())[:100]  # Limiter
+# ═══════════════════════════════════════════════════════════════════════════════
+# BINANCE WEBSOCKET STREAM
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # ========================================================================
-    # POSITIONS
-    # ========================================================================
-
-    def get_positions(self, symbol: Optional[str] = None,
-                      magic: Optional[int] = None) -> List[Position]:
-        """
-        Pour le spot crypto, il n'y a pas de "positions" comme en forex.
-        On retourne les soldes non-stable comme positions virtuelles.
-        Pour les futures, utiliser l'API futures spécifique.
-        """
-        if self.exchange is None:
-            return []
+class BinanceWebSocket:
+    """Client WebSocket pour les streams Binance."""
+    
+    STREAM_URL = "wss://stream.binance.com:9443/ws"
+    TESTNET_STREAM_URL = "wss://testnet.binance.vision/ws"
+    
+    def __init__(self, config: BinanceConfig):
+        self.config = config
+        self.ws = None
+        self.running = False
+        self._callbacks: Dict[str, callable] = {}
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        
         try:
-            # Tenter d'abord les positions de futures si supporté
-            if self.exchange.has.get('fetchPositions'):
-                try:
-                    positions = self.exchange.fetch_positions()
-                    result = []
-                    for p in positions:
-                        if p.get('contracts', 0) == 0:
-                            continue
-                        direction = 1 if p.get('side') == 'long' else -1
-                        result.append(Position(
-                            ticket=hash(f"{p.get('symbol')}{p.get('timestamp', 0)}"),
-                            symbol=p.get('symbol', ''),
-                            direction=direction,
-                            volume=abs(p.get('contracts', 0)),
-                            entry_price=p.get('entryPrice', 0) or 0,
-                            current_price=p.get('markPrice', 0) or 0,
-                            stop_loss=0, take_profit=0,
-                            profit=p.get('unrealizedPnl', 0) or 0,
-                            swap=0, commission=0,
-                            opened_at=datetime.fromtimestamp(
-                                (p.get('timestamp') or time.time() * 1000) / 1000
-                            ),
-                            magic=0, comment='',
-                        ))
-                    return result
-                except Exception:
-                    pass
-
-            # Fallback : soldes non-stables comme positions implicites
-            balance = self.exchange.fetch_balance()
-            result = []
-            stable_coins = {'USDT', 'USDC', 'BUSD', 'USD', 'EUR', 'DAI'}
-            for curr, amount in balance['total'].items():
-                if curr in stable_coins or not amount or amount <= 0:
-                    continue
-                # Essayer de trouver le prix en USDT
-                pair = f"{curr}/USDT"
-                try:
-                    ticker = self.exchange.fetch_ticker(pair)
-                    result.append(Position(
-                        ticket=hash(curr),
-                        symbol=pair,
-                        direction=1,
-                        volume=amount,
-                        entry_price=0,
-                        current_price=ticker.get('last', 0),
-                        stop_loss=0, take_profit=0,
-                        profit=0, swap=0, commission=0,
-                        opened_at=datetime.now(),
-                        magic=0, comment='Spot balance',
-                    ))
-                except Exception:
-                    continue
-            return result
-        except Exception as e:
-            self._last_error = str(e)
-            return []
-
-    def open_position(self, symbol: str, order_type: OrderType,
-                      volume: float, stop_loss: float, take_profit: float,
-                      magic: int = 0, comment: str = "") -> OrderResult:
-        if self.exchange is None:
-            return OrderResult(success=False, error_message="Non connecté")
-
-        sym = self._normalize_symbol(symbol)
-        try:
-            side = 'buy' if order_type == OrderType.MARKET_BUY else 'sell'
-            order = self.exchange.create_market_order(
-                symbol=sym,
-                side=side,
-                amount=volume,
-            )
-            # Ajout SL/TP si supporté (pas tous les exchanges le font via create_order)
-            # Certains nécessitent des appels séparés create_stop_loss_order, etc.
-            return OrderResult(
-                success=True,
-                ticket=int(order.get('id', 0)) if order.get('id', '').isdigit() else hash(order.get('id', '')),
-                filled_price=order.get('price', 0) or order.get('average', 0),
-            )
-        except Exception as e:
-            return OrderResult(success=False, error_message=str(e))
-
-    def close_position(self, ticket: int) -> OrderResult:
-        # Fermeture = ordre inverse
-        # Comme on n'a pas de "ticket" stable en crypto, c'est à gérer côté moteur
-        return OrderResult(
-            success=False,
-            error_message="close_position non supporté en crypto via cet adapter. "
-                         "Placez un ordre inverse manuellement."
+            import websocket
+            self._ws_module = websocket
+        except ImportError:
+            self._ws_module = None
+    
+    def _get_stream_url(self) -> str:
+        """URL du stream selon config."""
+        if self.config.testnet:
+            return self.TESTNET_STREAM_URL
+        return self.STREAM_URL
+    
+    def subscribe(self, streams: List[str], callback: callable):
+        """S'abonne à des streams."""
+        if not self._ws_module:
+            return
+        
+        def on_message(ws, message):
+            try:
+                data = json.loads(message)
+                
+                # Appeler le callback
+                for stream, cb in self._callbacks.items():
+                    if any(s in data for s in [stream, stream.replace("@kline_", "")]):
+                        cb(data)
+                        
+            except json.JSONDecodeError:
+                pass
+        
+        def on_error(ws, error):
+            logger.error(f"Binance WS error: {error}")
+        
+        def on_close(ws, code, msg):
+            self.running = False
+        
+        def on_open(ws):
+            # Subscribe
+            sub_msg = {
+                "method": "SUBSCRIBE",
+                "params": streams,
+                "id": 1
+            }
+            ws.send(json.dumps(sub_msg))
+        
+        self._callbacks.update({s: callback for s in streams})
+        
+        url = self._get_stream_url()
+        self.ws = self._ws_module.WebSocketApp(
+            url,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+            on_open=on_open
         )
+        
+        self.running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+    
+    def _run(self):
+        try:
+            self.ws.run_forever(ping_interval=30)
+        except:
+            pass
+        finally:
+            self.running = False
+    
+    def unsubscribe(self, streams: List[str]):
+        """Se désabonne."""
+        if not self.ws or not self.running:
+            return
+        
+        unsub_msg = {
+            "method": "UNSUBSCRIBE",
+            "params": streams,
+            "id": 2
+        }
+        self.ws.send(json.dumps(unsub_msg))
+    
+    def close(self):
+        """Ferme la connexion."""
+        self.running = False
+        if self.ws:
+            self.ws.close()
 
-    def modify_position(self, ticket: int, stop_loss: Optional[float] = None,
-                        take_profit: Optional[float] = None) -> OrderResult:
-        return OrderResult(
-            success=False,
-            error_message="modify_position non implémenté pour crypto"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BINANCE ADAPTER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BinanceAdapter(BrokerAdapter):
+    """
+    Adapter pour Binance (Spot et Futures).
+    
+    Nécessite:
+    - Clés API Binance (pour trading)
+    - pip install requests websocket-client
+    
+    Exemple config:
+    {
+        "api_key": "votre_cle",
+        "api_secret": "votre_secret",
+        "mode": "spot",  # ou "futures_usdm"
+        "testnet": True   # ou False pour production
+    }
+    """
+    
+    def __init__(self, config: dict = None):
+        # === CONFIGURATION ===
+        self.config = BinanceConfig(
+            api_key=config.get("api_key", "") if config else "",
+            api_secret=config.get("api_secret", "") if config else "",
+            mode=BinanceMode(config.get("mode", "spot")) if config else BinanceMode.SPOT,
+            testnet=config.get("testnet", True) if config else True,
         )
+        
+        self.http: Optional[BinanceHTTP] = None
+        self.ws: Optional[BinanceWebSocket] = None
+        self.connected = False
+        
+        # Cache
+        self._account_info: Dict = {}
+        self._positions: Dict[str, Position] = {}
+        self._symbols: Dict[str, dict] = {}
+    
+    def connect(self) -> bool:
+        """Connecte à Binance."""
+        self.http = BinanceHTTP(self.config)
+        
+        if self.config.api_key:
+            # Test connexion avec les clés
+            account = self.http.get("/api/v3/account")
+            if account:
+                self._account_info = account
+                self.connected = True
+                
+                # Charger les positions
+                self._load_positions()
+                
+                logger.info(f"Binance connecté: {self.config.mode.value}")
+                return True
+        
+        # Mode sans auth (lecture seule)
+        self.connected = True
+        logger.info(f"Binance connecté (lecture seule)")
+        return True
+    
+    def disconnect(self):
+        """Déconnecte."""
+        if self.ws:
+            self.ws.close()
+        self.connected = False
+    
+    def _load_positions(self):
+        """Charge les positions depuis l'API."""
+        if self.config.mode == BinanceMode.SPOT:
+            return  # Spot n'a pas de "positions" au même sens
+        
+        # Futures
+        positions = self.http.get("/fapi/v2/positionRisk")
+        if positions:
+            self._positions = {}
+            for p in positions:
+                if float(p.get("positionAmt", 0)) != 0:
+                    symbol = p.get("symbol", "")
+                    pos = Position(
+                        ticket=int(p.get("updateTime", 0)),
+                        symbol=symbol,
+                        direction=TradeDirection.LONG if float(p.get("positionAmt", 0)) > 0 else TradeDirection.SHORT,
+                        volume=abs(float(p.get("positionAmt", 0))),
+                        entry_price=float(p.get("entryPrice", 0)),
+                        current_price=float(p.get("markPrice", 0)),
+                        stop_loss=float(p.get("stopLoss", 0) or 0),
+                        take_profit=float(p.get("takeProfit", 0) or 0),
+                        unrealized_pnl=float(p.get("unrealizedProfit", 0)),
+                        opened_at=datetime.fromtimestamp(p.get("updateTime", 0) / 1000)
+                    )
+                    self._positions[symbol] = pos
+    
+    def get_account_info(self) -> dict:
+        """Retourne les infos du compte."""
+        if not self.connected:
+            return {}
+        
+        if self.config.mode == BinanceMode.SPOT:
+            data = self.http.get("/api/v3/account")
+            if data:
+                return {
+                    "balance": float(data.get("balances", [{}])[0].get("free", 0)),
+                    "equity": float(data.get("balances", [{}])[0].get("free", 0)),
+                    "currency": "USDT",
+                    "broker": "Binance Spot"
+                }
+        else:
+            data = self.http.get("/fapi/v2/account")
+            if data:
+                return {
+                    "balance": float(data.get("availableBalance", 0)),
+                    "equity": float(data.get("totalEquity", 0)),
+                    "margin": float(data.get("totalMarginBalance", 0)),
+                    "margin_level": float(data.get("marginLevel", 0)),
+                    "currency": "USDT",
+                    "broker": "Binance Futures"
+                }
+        
+        return {}
+    
+    def get_positions(self) -> List[Position]:
+        """Retourne les positions ouvertes."""
+        return list(self._positions.values())
+    
+    def get_candles(self, symbol: str, timeframe: str = "1h", count: int = 100) -> List[dict]:
+        """Récupère les chandeliers."""
+        if not self.connected:
+            return []
+        
+        # Map timeframe Binance
+        tf_map = {
+            "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
+            "1h": "1h", "2h": "2h", "4h": "4h", "6h": "6h",
+            "8h": "8h", "12h": "12h", "1d": "1d", "3d": "3d",
+            "1w": "1w", "1M": "1M"
+        }
+        interval = tf_map.get(timeframe, "1h")
+        
+        # Symbol format: BTCUSDT
+        endpoint = "/api/v3/klines"
+        if self.config.mode == BinanceMode.USD_M_FUTURES:
+            endpoint = "/fapi/v1/klines"
+        
+        params = {"symbol": symbol, "interval": interval, "limit": count}
+        data = self.http.get(endpoint, params)
+        
+        if not data:
+            return []
+        
+        candles = []
+        for k in data:
+            # Format Binance: [openTime, open, high, low, close, volume, ...]
+            candles.append({
+                "time": datetime.fromtimestamp(k[0] / 1000),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5])
+            })
+        
+        return candles
+    
+    def send_order(self, symbol: str, direction: TradeDirection, volume: float,
+                  stop_loss: float = 0, take_profit: float = 0) -> TradeResult:
+        """Envoie un ordre."""
+        if not self.connected:
+            return TradeResult(
+                False, None, symbol, direction, 0, volume, stop_loss, take_profit,
+                "Non connecté"
+            )
+        
+        if not self.config.api_key:
+            return TradeResult(
+                False, None, symbol, direction, 0, volume, stop_loss, take_profit,
+                "Clés API non configurées"
+            )
+        
+        start = time.time()
+        
+        # Type: BUY ou SELL
+        side = "BUY" if direction in [TradeDirection.LONG, TradeDirection.CLOSE_SHORT] else "SELL"
+        
+        # Type d'ordre
+        order_type = "MARKET"
+        
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": order_type,
+            "quantity": volume,
+        }
+        
+        # Stop loss / Take profit pour Futures
+        if self.config.mode != BinanceMode.SPOT:
+            if stop_loss:
+                params["stopPrice"] = stop_loss
+                params["stopLossPrice"] = stop_loss
+            if take_profit:
+                params["takeProfitPrice"] = take_profit
+        
+        endpoint = "/api/v3/order"
+        if self.config.mode == BinanceMode.USD_M_FUTURES:
+            endpoint = "/fapi/v1/order"
+        
+        result = self.http.post(endpoint, params)
+        elapsed = (time.time() - start) * 1000
+        
+        if result:
+            ticket = result.get("orderId", 0)
+            fill_price = float(result.get("fills", [{}])[0].get("price", 0)) or float(result.get("price", 0))
+            
+            logger.info(f"Binance ORDER: {side} {volume} {symbol}")
+            
+            return TradeResult(
+                True, ticket, symbol, direction,
+                fill_price, volume, stop_loss, take_profit,
+                execution_time_ms=elapsed
+            )
+        
+        return TradeResult(
+            False, None, symbol, direction, 0, volume, stop_loss, take_profit,
+            "Ordre échoué",
+            elapsed
+        )
+    
+    def close_position(self, ticket: int) -> bool:
+        """Ferme une position par ticket."""
+        if not self.connected:
+            return False
+        
+        # Trouver la position
+        position = None
+        for pos in self._positions.values():
+            if pos.ticket == ticket:
+                position = pos
+                break
+        
+        if not position:
+            return False
+        
+        # Envoyer ordre inverse
+        reverse_dir = TradeDirection.SHORT if position.direction == TradeDirection.LONG else TradeDirection.LONG
+        
+        result = self.send_order(
+            position.symbol,
+            reverse_dir,
+            position.volume
+        )
+        
+        if result.success:
+            del self._positions[position.symbol]
+            return True
+        
+        return False
+    
+    def close_position_by_symbol(self, symbol: str) -> bool:
+        """Ferme la position sur un symbole."""
+        if symbol not in self._positions:
+            return False
+        
+        position = self._positions[symbol]
+        return self.close_position(position.ticket)
+    
+    def get_symbol_info(self, symbol: str) -> Optional[dict]:
+        """Retourne les infos d'un symbole."""
+        if symbol in self._symbols:
+            return self._symbols[symbol]
+        
+        # Prix actuel
+        endpoint = "/api/v3/ticker/bookTicker"
+        if self.config.mode == BinanceMode.USD_M_FUTURES:
+            endpoint = "/fapi/v1/ticker/bookTicker"
+        
+        data = self.http.get(endpoint, {"symbol": symbol})
+        
+        if data:
+            info = {
+                "symbol": symbol,
+                "bid": float(data.get("bidPrice", 0)),
+                "ask": float(data.get("askPrice", 0)),
+                "spread": float(data.get("askPrice", 0)) - float(data.get("bidPrice", 0)),
+            }
+            self._symbols[symbol] = info
+            return info
+        
+        return None
+    
+    def get_balance(self, asset: str = "USDT") -> float:
+        """Retourne le solde d'un asset."""
+        if self.config.mode == BinanceMode.SPOT:
+            data = self.http.get("/api/v3/account")
+            if data:
+                for b in data.get("balances", []):
+                    if b.get("asset", "").upper() == asset.upper():
+                        return float(b.get("free", 0))
+        else:
+            info = self.get_account_info()
+            return info.get("balance", 0)
+        
+        return 0.0
 
 
-# ============================================================================
-# IMPLÉMENTATIONS SPÉCIFIQUES
-# ============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
+# FACTORY
+# ═══════════════════════════════════════════════════════════════════════════════
 
-class BinanceAdapter(CryptoAdapter):
-    broker_type = BrokerType.BINANCE
-    exchange_id = 'binance'
-
-
-class BybitAdapter(CryptoAdapter):
-    broker_type = BrokerType.BYBIT
-    exchange_id = 'bybit'
+def create_binance_adapter(config: dict = None) -> BinanceAdapter:
+    """Factory pour créer un adapter Binance."""
+    return BinanceAdapter(config)
 
 
-class KrakenAdapter(CryptoAdapter):
-    broker_type = BrokerType.KRAKEN
-    exchange_id = 'kraken'
-
-
-class CoinbaseAdapter(CryptoAdapter):
-    broker_type = BrokerType.COINBASE
-    exchange_id = 'coinbase'
+if __name__ == "__main__":
+    # Test
+    adapter = BinanceAdapter({"testnet": True})
+    print(f"Binance Adapter créé: {adapter.__class__.__name__}")
+    print(f"URL: {adapter.config.base_url}")

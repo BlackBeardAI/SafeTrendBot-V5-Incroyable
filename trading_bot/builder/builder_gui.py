@@ -1,7 +1,7 @@
 """
-SafeTrendBot Builder GUI — Interface graphique de génération de builds
-======================================================================
-Permet de générer facilement des versions protégées du bot.
+SafeTrendBot Builder GUI — Interface graphique améliorée
+=======================================================
+Interface moderne pour générer des builds protégés.
 """
 
 import sys
@@ -12,265 +12,718 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
-# UI Framework — essayer PyQt5 puis tkinter
+# UI Framework
 try:
-    import PyQt6.QtWidgets as QtWidgets
-    import PyQt6.QtCore as QtCore
-    import PyQt6.QtGui as QtGui
+    from PyQt6.QtWidgets import (
+        QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+        QLabel, QLineEdit, QPushButton, QTextEdit, QProgressBar,
+        QTableWidget, QTableWidgetItem, QTabWidget, QComboBox, QSpinBox,
+        QCheckBox, QRadioButton, QGroupBox, QMessageBox, QFileDialog,
+        QProgressDialog, QStatusBar, QMenuBar, QMenu, QDialog, QFrame
+    )
+    from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QSize
+    from PyQt6.QtGui import QAction, QIcon, QPalette, QColor, QFont
     UI_FRAMEWORK = "PyQt6"
 except ImportError:
     try:
-        import PyQt5.QtWidgets as QtWidgets
-        import PyQt5.QtCore as QtCore
-        import PyQt5.QtGui as QtGui
+        from PyQt5.QtWidgets import (
+            QApplication, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+            QLabel, QLineEdit, QPushButton, QTextEdit, QProgressBar,
+            QTableWidget, QTableWidgetItem, QTabWidget, QComboBox, QSpinBox,
+            QCheckBox, QRadioButton, QGroupBox, QMessageBox, QFileDialog,
+            QProgressDialog, QStatusBar, QMenuBar, QMenu, QDialog, QFrame
+        )
+        from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QSize
+        from PyQt5.QtGui import QAction, QIcon, QPalette, QColor, QFont
         UI_FRAMEWORK = "PyQt5"
     except ImportError:
-        import tkinter as tk
-        from tkinter import ttk, messagebox, filedialog
-        UI_FRAMEWORK = "tkinter"
+        print("PyQt5/PyQt6 requis. Install: pip install PyQt6")
+        sys.exit(1)
 
 # Ajouter le parent au path pour imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from builder.license_builder import (
     SafeTrendBotBuilder, BuildConfig, LicenseGenerator, LicenseDatabase, VERSION
 )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PyQt6/PyQt5 GUI
+# STYLES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class BuilderGUI:
-    """Interface graphique principale du Builder."""
+DARK_STYLE = """
+QWidget {
+    background-color: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+}
+
+QMainWindow {
+    background-color: #16213e;
+}
+
+QLabel {
+    color: #e0e0e0;
+}
+
+QLabel#title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #00d9ff;
+}
+
+QLabel#subtitle {
+    font-size: 14px;
+    color: #888;
+}
+
+QPushButton {
+    background-color: #0f3460;
+    color: #fff;
+    border: 1px solid #0f3460;
+    border-radius: 5px;
+    padding: 8px 16px;
+    min-height: 30px;
+}
+
+QPushButton:hover {
+    background-color: #165a8a;
+}
+
+QPushButton:pressed {
+    background-color: #0a2540;
+}
+
+QPushButton#primary {
+    background-color: #00d9ff;
+    color: #000;
+    font-weight: bold;
+    border: none;
+}
+
+QPushButton#primary:hover {
+    background-color: #33e5ff;
+}
+
+QPushButton#danger {
+    background-color: #e74c3c;
+    border: none;
+}
+
+QPushButton#danger:hover {
+    background-color: #c0392b;
+}
+
+QPushButton#success {
+    background-color: #27ae60;
+    border: none;
+}
+
+QPushButton#success:hover {
+    background-color: #2ecc71;
+}
+
+QLineEdit {
+    background-color: #0d1117;
+    color: #00d9ff;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #00d9ff;
+}
+
+QTextEdit {
+    background-color: #0d1117;
+    color: #58a6ff;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+}
+
+QTableWidget {
+    background-color: #0d1117;
+    alternate-background-color: #161b22;
+    gridline-color: #30363d;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+}
+
+QTableWidget::item {
+    padding: 5px;
+}
+
+QTableWidget::item:selected {
+    background-color: #1f6feb;
+}
+
+QHeaderView::section {
+    background-color: #0d1117;
+    color: #00d9ff;
+    padding: 8px;
+    border: none;
+    font-weight: bold;
+}
+
+QTabWidget::pane {
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    background-color: #1a1a2e;
+}
+
+QTabBar::tab {
+    background-color: #0d1117;
+    color: #888;
+    padding: 10px 20px;
+    border: 1px solid #30363d;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected {
+    background-color: #1a1a2e;
+    color: #00d9ff;
+    border-bottom: 2px solid #00d9ff;
+}
+
+QSpinBox, QComboBox {
+    background-color: #0d1117;
+    color: #00d9ff;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+QSpinBox:focus, QComboBox:focus {
+    border: 1px solid #00d9ff;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #0d1117;
+    color: #00d9ff;
+    selection-background-color: #1f6feb;
+}
+
+QGroupBox {
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+QGroupBox::title {
+    color: #00d9ff;
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+
+QProgressBar {
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    background-color: #0d1117;
+    text-align: center;
+    color: #00d9ff;
+}
+
+QProgressBar::chunk {
+    background-color: #00d9ff;
+    border-radius: 3px;
+}
+
+QStatusBar {
+    background-color: #0d1117;
+    color: #888;
+}
+
+QMenuBar {
+    background-color: #0d1117;
+    color: #e0e0e0;
+}
+
+QMenuBar::item:selected {
+    background-color: #1f6feb;
+}
+
+QMenu {
+    background-color: #0d1117;
+    color: #e0e0e0;
+    border: 1px solid #30363d;
+}
+
+QMenu::item:selected {
+    background-color: #1f6feb;
+}
+
+QCheckBox {
+    color: #e0e0e0;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #30363d;
+    border-radius: 3px;
+    background-color: #0d1117;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #00d9ff;
+    border-color: #00d9ff;
+}
+
+QRadioButton {
+    color: #e0e0e0;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #30363d;
+    border-radius: 8px;
+    background-color: #0d1117;
+}
+
+QRadioButton::indicator:checked {
+    border-color: #00d9ff;
+    background-color: #00d9ff;
+}
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# THREAD WORKER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BuildWorker(QThread):
+    """Thread worker pour les builds en arrière-plan."""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
+    
+    def __init__(self, builder, config):
+        super().__init__()
+        self.builder = builder
+        self.config = config
+    
+    def run(self):
+        try:
+            self.progress.emit(f"🚀 Build: {self.config.output_name}")
+            success, msg = self.builder.build(self.config)
+            self.finished.emit(success, msg)
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+class BatchWorker(QThread):
+    """Thread worker pour les batch builds."""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(list)
+    
+    def __init__(self, builder, count, email_prefix, expiry_days, platform):
+        super().__init__()
+        self.builder = builder
+        self.count = count
+        self.email_prefix = email_prefix
+        self.expiry_days = expiry_days
+        self.platform = platform
+    
+    def run(self):
+        try:
+            results = self.builder.build_batch(
+                count=self.count,
+                email_prefix=self.email_prefix,
+                expiry_days=self.expiry_days,
+                platform=self.platform
+            )
+            self.finished.emit(results)
+        except Exception as e:
+            self.finished.emit([])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN WINDOW
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BuilderWindow(QWidget):
+    """Fenêtre principale du Builder."""
     
     def __init__(self):
+        super().__init__()
+        
         self.builder = SafeTrendBotBuilder()
-        self.build_thread: Optional[threading.Thread] = None
+        self.build_worker: Optional[BuildWorker] = None
+        self.batch_worker: Optional[BatchWorker] = None
+        
         self._setup_ui()
+        self._refresh_licenses()
     
     def _setup_ui(self):
-        self.window = QtWidgets.QWidget()
-        self.window.setWindowTitle(f"SafeTrendBot Builder v{VERSION}")
-        self.window.setMinimumSize(700, 600)
+        """Configure l'interface."""
+        self.setWindowTitle(f"SafeTrendBot Builder v{VERSION}")
+        self.setMinimumSize(900, 700)
+        self.setStyleSheet(DARK_STYLE)
         
-        # Layout principal
-        layout = QtWidgets.QVBoxLayout()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
         
         # Header
-        header = QtWidgets.QLabel(f"<h1>🔐 SafeTrendBot License Builder</h1>")
-        header.setStyleSheet("padding: 10px; background: #1a1a2e; color: white; border-radius: 5px;")
-        layout.addWidget(header)
+        header = QVBoxLayout()
+        title = QLabel("🔐 SafeTrendBot License Builder")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignCenter)
+        header.addWidget(title)
         
-        # Tab widget
-        tabs = QtWidgets.QTabWidget()
-        tabs.addTab(self._build_tab(), "📦 Générer Build")
-        tabs.addTab(self._batch_tab(), "📋 Batch")
-        tabs.addTab(self._licenses_tab(), "🔑 Licences")
-        tabs.addTab(self._settings_tab(), "⚙️ Settings")
+        subtitle = QLabel("Générez des builds protégés pour distribution")
+        subtitle.setObjectName("subtitle")
+        subtitle.setAlignment(Qt.AlignCenter)
+        header.addWidget(subtitle)
         
-        layout.addWidget(tabs)
+        layout.addLayout(header)
         
-        # Log output
-        log_label = QtWidgets.QLabel("📝 Log:")
+        # Tabs
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_tab(), "📦 Générer Build")
+        self.tabs.addTab(self._batch_tab(), "📋 Batch (Multi)")
+        self.tabs.addTab(self._licenses_tab(), "🔑 Licences")
+        self.tabs.addTab(self._server_tab(), "🖥️ Serveur Activation")
+        self.tabs.addTab(self._settings_tab(), "⚙️ Configuration")
+        
+        layout.addWidget(self.tabs)
+        
+        # Log
+        log_label = QLabel("📝 Console:")
         layout.addWidget(log_label)
         
-        self.log_output = QtWidgets.QTextEdit()
-        self.log_output.setReadOnly(True)
-        self.log_output.setMaximumHeight(150)
-        self.log_output.setStyleSheet("font-family: monospace; background: #0d1117; color: #58a6ff;")
-        layout.addWidget(self.log_output)
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(120)
+        self.log_text.setMinimumHeight(80)
+        layout.addWidget(self.log_text)
         
-        self.window.setLayout(layout)
-        self.window.show()
+        # Status bar
+        self.status_bar = QStatusBar()
+        self.status_bar.showMessage("Prêt")
+        layout.addWidget(self.status_bar)
+        
+        self.setLayout(layout)
     
-    def _build_tab(self) -> QtWidgets.QWidget:
+    def _build_tab(self) -> QWidget:
         """Onglet génération de build unique."""
-        tab = QtWidgets.QWidget()
-        layout = QtWidgets.QFormLayout()
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Clé de licence
-        self.key_input = QtWidgets.QLineEdit()
+        key_group = QGroupBox("🔑 Clé de Licence")
+        key_layout = QHBoxLayout()
+        
+        self.key_input = QLineEdit()
         self.key_input.setPlaceholderText("STB5-XXXX-XXXX-XXXX (laisser vide pour générer)")
-        self.gen_key_btn = QtWidgets.QPushButton("🎲 Générer")
-        self.gen_key_btn.clicked.connect(self._generate_key)
-        
-        key_layout = QtWidgets.QHBoxLayout()
+        self.key_input.setMinimumWidth(300)
         key_layout.addWidget(self.key_input)
-        key_layout.addWidget(self.gen_key_btn)
-        layout.addRow("Licence:", key_layout)
         
-        # Email
-        self.email_input = QtWidgets.QLineEdit()
+        gen_key_btn = QPushButton("🎲 Générer")
+        gen_key_btn.clicked.connect(self._generate_key)
+        key_layout.addWidget(gen_key_btn)
+        
+        key_group.setLayout(key_layout)
+        layout.addWidget(key_group)
+        
+        # Client info
+        info_group = QGroupBox("👤 Information Client")
+        info_layout = QFormLayout()
+        
+        self.email_input = QLineEdit()
         self.email_input.setPlaceholderText("client@exemple.com")
-        layout.addRow("Email:", self.email_input)
+        info_layout.addRow("Email:", self.email_input)
+        
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # Expiration & Plateforme
+        options_group = QGroupBox("⏰ Expiration & Plateforme")
+        options_layout = QHBoxLayout()
         
         # Expiration
-        self.expiry_check = QtWidgets.QCheckBox("Définir expiration")
-        self.expiry_days = QtWidgets.QSpinBox()
+        exp_layout = QVBoxLayout()
+        self.expiry_check = QCheckBox("Activer expiration")
+        exp_layout.addWidget(self.expiry_check)
+        
+        expiry_row = QHBoxLayout()
+        self.expiry_days = QSpinBox()
         self.expiry_days.setMinimum(1)
         self.expiry_days.setMaximum(365)
         self.expiry_days.setValue(30)
         self.expiry_days.setEnabled(False)
-        
-        self.expiry_check.toggled.connect(lambda checked: self.expiry_days.setEnabled(checked))
-        
-        expiry_layout = QtWidgets.QHBoxLayout()
-        expiry_layout.addWidget(self.expiry_check)
-        expiry_layout.addWidget(self.expiry_days)
-        expiry_layout.addWidget(QtWidgets.QLabel("jours"))
-        layout.addRow("Expiration:", expiry_layout)
+        self.expiry_check.toggled.connect(self.expiry_days.setEnabled)
+        expiry_row.addWidget(QLabel("Jours:"))
+        expiry_row.addWidget(self.expiry_days)
+        exp_layout.addLayout(expiry_row)
+        options_layout.addLayout(exp_layout)
         
         # Plateforme
-        self.platform_combo = QtWidgets.QComboBox()
+        plat_layout = QVBoxLayout()
+        plat_layout.addWidget(QLabel("Plateforme:"))
+        self.platform_combo = QComboBox()
         self.platform_combo.addItems(["windows", "linux", "macos"])
-        layout.addRow("Plateforme:", self.platform_combo)
+        plat_layout.addWidget(self.platform_combo)
+        options_layout.addLayout(plat_layout)
         
-        # Options
-        self.obfuscate_check = QtWidgets.QCheckBox("Obfuscation (PyArmor)")
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
+        
+        # Options advanced
+        opts_group = QGroupBox("🔒 Options de Protection")
+        opts_layout = QHBoxLayout()
+        
+        self.obfuscate_check = QCheckBox("Obfuscation PyArmor")
         self.obfuscate_check.setChecked(True)
-        self.cython_check = QtWidgets.QCheckBox("Compilation Cython")
-        self.cython_check.setChecked(True)
-        
-        opts_layout = QtWidgets.QHBoxLayout()
         opts_layout.addWidget(self.obfuscate_check)
+        
+        self.cython_check = QCheckBox("Compilation Cython")
+        self.cython_check.setChecked(True)
         opts_layout.addWidget(self.cython_check)
-        layout.addRow("Options:", opts_layout)
+        
+        self.pyinstaller_check = QCheckBox("PyInstaller (exe)")
+        self.pyinstaller_check.setChecked(True)
+        opts_layout.addWidget(self.pyinstaller_check)
+        
+        opts_group.setLayout(opts_layout)
+        layout.addWidget(opts_group)
         
         # Bouton build
-        self.build_btn = QtWidgets.QPushButton("🚀 GÉNÉRER LE BUILD")
-        self.build_btn.setStyleSheet("""
-            QPushButton {
-                background: #238636;
-                color: white;
-                padding: 12px;
-                font-size: 14px;
-                border-radius: 5px;
-            }
-            QPushButton:hover { background: #2ea043; }
-            QPushButton:disabled { background: #484f58; }
-        """)
+        self.build_btn = QPushButton("🚀 GÉNÉRER LE BUILD")
+        self.build_btn.setObjectName("primary")
+        self.build_btn.setMinimumHeight(50)
         self.build_btn.clicked.connect(self._start_build)
-        layout.addRow("", self.build_btn)
+        layout.addWidget(self.build_btn)
         
         # Progress
-        self.progress = QtWidgets.QProgressBar()
+        self.progress = QProgressBar()
         self.progress.setVisible(False)
-        layout.addRow("", self.progress)
+        layout.addWidget(self.progress)
         
+        layout.addStretch()
         tab.setLayout(layout)
         return tab
     
-    def _batch_tab(self) -> QtWidgets.QWidget:
-        """Onglet génération batch."""
-        tab = QtWidgets.QWidget()
-        layout = QtWidgets.QFormLayout()
+    def _batch_tab(self) -> QWidget:
+        """Onglet batch."""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Nombre
-        self.batch_count = QtWidgets.QSpinBox()
+        count_group = QGroupBox("📊 Configuration Batch")
+        count_layout = QFormLayout()
+        
+        self.batch_count = QSpinBox()
         self.batch_count.setMinimum(1)
         self.batch_count.setMaximum(100)
         self.batch_count.setValue(10)
-        layout.addRow("Nombre de builds:", self.batch_count)
+        count_layout.addRow("Nombre de builds:", self.batch_count)
         
-        # Email prefix
-        self.batch_email_prefix = QtWidgets.QLineEdit()
+        self.batch_email_prefix = QLineEdit()
         self.batch_email_prefix.setText("client")
-        layout.addRow("Préfixe email:", self.batch_email_prefix)
+        count_layout.addRow("Préfixe email:", self.batch_email_prefix)
+        
+        count_group.setLayout(count_layout)
+        layout.addWidget(count_group)
+        
+        # Options batch
+        opts_group = QGroupBox("Options")
+        opts_layout = QHBoxLayout()
         
         # Expiration
-        self.batch_expiry = QtWidgets.QSpinBox()
+        expiry_layout = QVBoxLayout()
+        expiry_layout.addWidget(QLabel("Expiration (0 = illimité):"))
+        self.batch_expiry = QSpinBox()
         self.batch_expiry.setMinimum(0)
         self.batch_expiry.setMaximum(365)
         self.batch_expiry.setValue(30)
-        expiry_hint = QtWidgets.QLabel("0 = sans expiration")
-        expiry_hint.setStyleSheet("color: gray;")
-        expiry_row = QtWidgets.QHBoxLayout()
-        expiry_row.addWidget(self.batch_expiry)
-        expiry_row.addWidget(expiry_hint)
-        layout.addRow("Jours expiration:", expiry_row)
+        expiry_layout.addWidget(self.batch_expiry)
+        opts_layout.addLayout(expiry_layout)
         
         # Plateforme
-        self.batch_platform = QtWidgets.QComboBox()
+        plat_layout = QVBoxLayout()
+        plat_layout.addWidget(QLabel("Plateforme:"))
+        self.batch_platform = QComboBox()
         self.batch_platform.addItems(["windows", "linux", "macos"])
-        layout.addRow("Plateforme:", self.batch_platform)
+        plat_layout.addWidget(self.batch_platform)
+        opts_layout.addLayout(plat_layout)
+        
+        opts_group.setLayout(opts_layout)
+        layout.addWidget(opts_group)
         
         # Bouton
-        self.batch_btn = QtWidgets.QPushButton("📦 GÉNÉRER BATCH")
-        self.batch_btn.setStyleSheet("""
-            QPushButton {
-                background: #1f6feb;
-                color: white;
-                padding: 12px;
-                font-size: 14px;
-                border-radius: 5px;
-            }
-            QPushButton:hover { background: #388bfd; }
-        """)
+        self.batch_btn = QPushButton("📦 GÉNÉRER BATCH")
+        self.batch_btn.setObjectName("primary")
+        self.batch_btn.setMinimumHeight(50)
         self.batch_btn.clicked.connect(self._start_batch)
-        layout.addRow("", self.batch_btn)
+        layout.addWidget(self.batch_btn)
         
+        layout.addStretch()
         tab.setLayout(layout)
         return tab
     
-    def _licenses_tab(self) -> QtWidgets.QWidget:
+    def _licenses_tab(self) -> QWidget:
         """Onglet gestion des licences."""
-        tab = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout()
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Stats
+        stats_layout = QHBoxLayout()
+        self.stats_label = QLabel("📊 0 licences | 0 actives | 0 révoquées")
+        stats_layout.addWidget(self.stats_label)
+        stats_layout.addStretch()
+        layout.addLayout(stats_layout)
         
         # Table
-        self.licenses_table = QtWidgets.QTableWidget()
-        self.licenses_table.setColumnCount(5)
-        self.licenses_table.setHorizontalHeaderLabels(["Clé", "Email", "Expires", "Revoked", "Activations"])
-        self.licenses_table.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
-        self.licenses_table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
+        self.licenses_table = QTableWidget()
+        self.licenses_table.setColumnCount(6)
+        self.licenses_table.setHorizontalHeaderLabels([
+            "Clé", "Email", "Expires", "Status", "Machine", "Activations"
+        ])
+        self.licenses_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.licenses_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.licenses_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.licenses_table)
         
         # Boutons
-        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout = QHBoxLayout()
         
-        refresh_btn = QtWidgets.QPushButton("🔄 Rafraîchir")
+        refresh_btn = QPushButton("🔄 Rafraîchir")
         refresh_btn.clicked.connect(self._refresh_licenses)
         btn_layout.addWidget(refresh_btn)
         
-        revoke_btn = QtWidgets.QPushButton("❌ Révoquer")
+        export_btn = QPushButton("💾 Exporter CSV")
+        export_btn.clicked.connect(self._export_csv)
+        btn_layout.addWidget(export_btn)
+        
+        revoke_btn = QPushButton("❌ Révoquer")
+        revoke_btn.setObjectName("danger")
         revoke_btn.clicked.connect(self._revoke_selected)
         btn_layout.addWidget(revoke_btn)
         
-        export_btn = QtWidgets.QPushButton("💾 Exporter CSV")
-        export_btn.clicked.connect(self._export_csv)
-        btn_layout.addWidget(export_btn)
+        copy_btn = QPushButton("📋 Copier Clé")
+        copy_btn.clicked.connect(self._copy_key)
+        btn_layout.addWidget(copy_btn)
         
         layout.addLayout(btn_layout)
         
         tab.setLayout(layout)
-        self._refresh_licenses()
         return tab
     
-    def _settings_tab(self) -> QtWidgets.QWidget:
-        """Onglet paramètres."""
-        tab = QtWidgets.QWidget()
-        layout = QtWidgets.QFormLayout()
+    def _server_tab(self) -> QWidget:
+        """Onglet serveur d'activation."""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Version
-        layout.addRow("Version:", QtWidgets.QLabel(VERSION))
+        # Info
+        info = QLabel("""🖥️ Serveur d'Activation en Ligne
         
-        # Path
-        self.path_input = QtWidgets.QLineEdit()
-        self.path_input.setText(str(self.builder.project_root))
-        layout.addRow("Project path:", self.path_input)
+Ce serveur permet de:
+• Gérer les licences à distance
+• Révoquer des licences instantanément
+• Tracker les activations
+• Recevoir des heartbeats
+
+Pour lancer le serveur:
+    cd server
+    pip install flask
+    python activation_server.py
+
+Le serveur écoute sur le port 5000 par défaut.""")
+        info.setWordWrap(True)
+        layout.addWidget(info)
         
-        # Output
-        self.output_input = QtWidgets.QLineEdit()
-        self.output_input.setText(str(self.builder.project_root / "builds"))
-        layout.addRow("Builds output:", self.output_input)
+        # Actions
+        actions_group = QGroupBox("Actions Rapides")
+        actions_layout = QHBoxLayout()
         
+        open_server_btn = QPushButton("📂 Ouvrir dossier server")
+        open_server_btn.clicked.connect(self._open_server_folder)
+        actions_layout.addWidget(open_server_btn)
+        
+        start_server_btn = QPushButton("🚀 Démarrer Serveur (local)")
+        start_server_btn.setObjectName("success")
+        start_server_btn.clicked.connect(self._start_server)
+        actions_layout.addWidget(start_server_btn)
+        
+        actions_group.setLayout(actions_layout)
+        layout.addWidget(actions_group)
+        
+        layout.addStretch()
         tab.setLayout(layout)
         return tab
+    
+    def _settings_tab(self) -> QWidget:
+        """Onglet paramètres."""
+        tab = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Versions
+        version_group = QGroupBox("Versions")
+        version_layout = QFormLayout()
+        version_layout.addRow("Version:", QLabel(VERSION))
+        version_layout.addRow("Python:", QLabel(sys.version.split()[0]))
+        version_group.setLayout(version_layout)
+        layout.addWidget(version_group)
+        
+        # Paths
+        paths_group = QGroupBox("Chemins")
+        paths_layout = QFormLayout()
+        paths_layout.addRow("Project:", QLabel(str(self.builder.project_root)))
+        paths_layout.addRow("Builds:", QLabel(str(self.builder.project_root / "builds")))
+        paths_layout.addRow("Releases:", QLabel(str(self.builder.project_root / "releases")))
+        paths_group.setLayout(paths_layout)
+        layout.addWidget(paths_group)
+        
+        # Master key (warning)
+        key_group = QGroupBox("⚠️ Sécurité")
+        key_layout = QVBoxLayout()
+        key_warning = QLabel("""ATTENTION: La MASTER_KEY dans license_builder.py 
+doit être changée en production!
+        
+Ne jamais distribuer cette clé.""")
+        key_warning.setStyleSheet("color: #e74c3c;")
+        key_layout.addWidget(key_warning)
+        
+        change_key_btn = QPushButton("🔑 Générer nouvelle Master Key")
+        change_key_btn.clicked.connect(self._generate_master_key)
+        key_layout.addWidget(change_key_btn)
+        
+        key_group.setLayout(key_layout)
+        layout.addWidget(key_group)
+        
+        layout.addStretch()
+        tab.setLayout(layout)
+        return tab
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # SLOTS
+    # ═══════════════════════════════════════════════════════════════════════════
     
     def _log(self, msg: str):
         """Ajoute au log."""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_output.append(f"[{timestamp}] {msg}")
+        self.log_text.append(f"[{timestamp}] {msg}")
+        self.status_bar.showMessage(msg)
     
     def _generate_key(self):
         """Génère une clé."""
@@ -295,17 +748,14 @@ class BuilderGUI:
         
         self.build_btn.setEnabled(False)
         self.progress.setVisible(True)
-        self.progress.setRange(0, 0)  # Indeterminate
+        self.progress.setRange(0, 0)
         
-        def run():
-            self._log(f"🚀 Démarrage build: {config.output_name}")
-            success, msg = self.builder.build(config)
-            
-            QtCore.QMetaObject.invokeMethod(QtWidgets.QApplication.instance(), 
-                lambda: self._build_finished(success, msg))
+        self._log(f"🚀 Démarrage build...")
         
-        self.build_thread = threading.Thread(target=run)
-        self.build_thread.start()
+        self.build_worker = BuildWorker(self.builder, config)
+        self.build_worker.progress.connect(self._log)
+        self.build_worker.finished.connect(self._build_finished)
+        self.build_worker.start()
     
     def _build_finished(self, success: bool, msg: str):
         """Callback fin de build."""
@@ -314,8 +764,10 @@ class BuilderGUI:
         
         if success:
             self._log(f"✅ BUILD RÉUSSI: {msg}")
+            self._refresh_licenses()
         else:
             self._log(f"❌ ERREUR: {msg}")
+            QMessageBox.critical(self, "Erreur Build", msg)
     
     def _start_batch(self):
         """Lance un batch."""
@@ -323,204 +775,167 @@ class BuilderGUI:
         expiry = self.batch_expiry.value() or None
         
         self.batch_btn.setEnabled(False)
+        self._log(f"🚀 Batch: {count} builds...")
         
-        def run():
-            results = self.builder.build_batch(
-                count=count,
-                email_prefix=self.batch_email_prefix.text(),
-                expiry_days=expiry,
-                platform=self.batch_platform.currentText(),
-            )
-            
-            QtCore.QMetaObject.invokeMethod(QtWidgets.QApplication.instance(),
-                lambda: self._batch_finished(results))
-        
-        self.build_thread = threading.Thread(target=run)
-        self.build_thread.start()
+        self.batch_worker = BatchWorker(
+            self.builder,
+            count,
+            self.batch_email_prefix.text(),
+            expiry,
+            self.batch_platform.currentText()
+        )
+        self.batch_worker.progress.connect(self._log)
+        self.batch_worker.finished.connect(self._batch_finished)
+        self.batch_worker.start()
     
     def _batch_finished(self, results: list):
         self.batch_btn.setEnabled(True)
         success_count = sum(1 for r in results if r["success"])
         self._log(f"✅ Batch terminé: {success_count}/{len(results)} réussie(s)")
         self._refresh_licenses()
+        
+        if success_count < len(results):
+            QMessageBox.warning(
+                self, "Batch partiel",
+                f"{success_count}/{len(results)} builds réussis.\n"
+                "Vérifiez la console pour les erreurs."
+            )
     
     def _refresh_licenses(self):
         """Rafraîchit la table des licences."""
         licenses = self.builder.license_db.list_all()
+        
         self.licenses_table.setRowCount(len(licenses))
         
+        active_count = 0
+        revoked_count = 0
+        
         for i, lic in enumerate(licenses):
-            self.licenses_table.setItem(i, 0, QtWidgets.QTableWidgetItem(lic["key"]))
-            self.licenses_table.setItem(i, 1, QtWidgets.QTableWidgetItem(lic.get("email", "")))
-            self.licenses_table.setItem(i, 2, QtWidgets.QTableWidgetItem(lic.get("expires", "Jamais")))
-            self.licenses_table.setItem(i, 3, QtWidgets.QTableWidgetItem("✅" if not lic.get("revoked") else "❌"))
-            self.licenses_table.setItem(i, 4, QtWidgets.QTableWidgetItem(str(len(lic.get("activations", [])))))
+            self.licenses_table.setItem(i, 0, QTableWidgetItem(lic["key"]))
+            self.licenses_table.setItem(i, 1, QTableWidgetItem(lic.get("email", "")))
+            self.licenses_table.setItem(i, 2, QTableWidgetItem(
+                lic.get("expires", "Jamais") or "Jamais"
+            ))
+            
+            revoked = lic.get("revoked", False)
+            status_item = QTableWidgetItem("✅ Active" if not revoked else "❌ Révoquée")
+            if revoked:
+                revoked_count += 1
+            else:
+                active_count += 1
+            self.licenses_table.setItem(i, 3, status_item)
+            
+            # Machine (première activation)
+            activations = lic.get("activations", [])
+            machine = activations[0]["machine"] if activations else "N/A"
+            self.licenses_table.setItem(i, 4, QTableWidgetItem(machine[:30]))
+            
+            self.licenses_table.setItem(i, 5, QTableWidgetItem(str(len(activations))))
         
         self.licenses_table.resizeColumnsToContents()
+        
+        # Update stats
+        self.stats_label.setText(
+            f"📊 {len(licenses)} licences | {active_count} actives | {revoked_count} révoquées"
+        )
     
     def _revoke_selected(self):
         """Révoque la licence sélectionnée."""
         row = self.licenses_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Sélection", "Sélectionnez une licence")
+            return
+        
+        key_item = self.licenses_table.item(row, 0)
+        if key_item:
+            key = key_item.text()
+            
+            reply = QMessageBox.question(
+                self, "Révoquer",
+                f"Révoquer la licence {key}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.builder.license_db.revoke(key)
+                LicenseGenerator.revoke_key(key)
+                self._log(f"❌ Révoquée: {key}")
+                self._refresh_licenses()
+    
+    def _copy_key(self):
+        """Copie la clé sélectionnée."""
+        row = self.licenses_table.currentRow()
         if row >= 0:
-            key = self.licenses_table.item(row, 0).text()
-            self.builder.license_db.revoke(key)
-            LicenseGenerator.revoke_key(key)
-            self._log(f"❌ Révoquée: {key}")
-            self._refresh_licenses()
+            key_item = self.licenses_table.item(row, 0)
+            if key_item:
+                clipboard = QApplication.clipboard()
+                clipboard.setText(key_item.text())
+                self._log(f"📋 Copié: {key_item.text()}")
     
     def _export_csv(self):
         """Exporte les licences en CSV."""
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self.window, "Exporter CSV",
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exporter CSV",
             f"licenses_{datetime.now().strftime('%Y%m%d')}.csv",
             "CSV (*.csv)"
         )
+        
         if path:
             licenses = self.builder.license_db.list_all()
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write("key,email,expires,revoked,activations\n")
                 for lic in licenses:
-                    f.write(f'{lic["key"]},{lic.get("email","")},{lic.get("expires","")},{lic.get("revoked",False)},{len(lic.get("activations",[]))}\n')
+                    f.write(f'{lic["key"]},{lic.get("email","")},'
+                           f'{lic.get("expires","")},{lic.get("revoked",False)},'
+                           f'{len(lic.get("activations",[]))}\n')
             self._log(f"💾 Exporté: {path}")
     
-    def run(self):
-        """Lance l'application."""
-        self._log(f"🔐 SafeTrendBot Builder v{VERSION} initialisé")
-        return self.window
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# tkinter fallback
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class BuilderGUI_tk:
-    """Version tkinter (fallback si PyQt pas disponible)."""
+    def _open_server_folder(self):
+        """Ouvre le dossier server."""
+        import os
+        server_path = self.builder.project_root / "server"
+        os.startfile(server_path) if os.name == 'nt' else None
     
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.title(f"SafeTrendBot Builder v{VERSION}")
-        self.root.geometry("600x500")
-        self.builder = SafeTrendBotBuilder()
+    def _start_server(self):
+        """Démarre le serveur d'activation."""
+        self._log("🚀 Lancement serveur...")
         
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        # Notebook (tabs)
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill='both', expand=True, padx=10, pady=10)
+        import subprocess
+        server_path = self.builder.project_root / "server" / "activation_server.py"
         
-        # Tab Build
-        build_frame = ttk.Frame(nb)
-        nb.add(build_frame, text="📦 Générer Build")
-        self._setup_build_tab(build_frame)
-        
-        # Tab Licences
-        lic_frame = ttk.Frame(nb)
-        nb.add(lic_frame, text="🔑 Licences")
-        self._setup_licenses_tab(lic_frame)
-        
-        # Log
-        ttk.Label(self.root, text="Log:").pack(anchor='w', padx=10)
-        self.log_text = tk.Text(self.root, height=8, bg='black', fg='green')
-        self.log_text.pack(fill='x', padx=10, pady=5)
-    
-    def _setup_build_tab(self, parent):
-        ttk.Label(parent, text="Clé de licence:").pack(anchor='w', padx=10, pady=5)
-        
-        key_frame = ttk.Frame(parent)
-        key_frame.pack(fill='x', padx=10)
-        
-        self.key_entry = ttk.Entry(key_frame, width=40)
-        self.key_entry.pack(side='left')
-        
-        ttk.Button(key_frame, text="🎲 Générer", 
-                   command=self._generate_key).pack(side='left', padx=5)
-        
-        ttk.Label(parent, text="Email:").pack(anchor='w', padx=10, pady=5)
-        self.email_entry = ttk.Entry(parent, width=40)
-        self.email_entry.pack(fill='x', padx=10)
-        
-        # Platform
-        ttk.Label(parent, text="Plateforme:").pack(anchor='w', padx=10, pady=5)
-        self.platform_var = tk.StringVar(value="windows")
-        ttk.Radiobutton(parent, text="Windows", variable=self.platform_var, 
-                       value="windows").pack(anchor='w', padx=30)
-        ttk.Radiobutton(parent, text="Linux", variable=self.platform_var,
-                       value="linux").pack(anchor='w', padx=30)
-        
-        # Build button
-        self.build_btn = ttk.Button(parent, text="🚀 GÉNÉRER LE BUILD",
-                                    command=self._start_build)
-        self.build_btn.pack(pady=20)
-    
-    def _setup_licenses_tab(self, parent):
-        self.licenses_listbox = tk.Listbox(parent, width=60)
-        self.licenses_listbox.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        btn_frame = ttk.Frame(parent)
-        btn_frame.pack()
-        
-        ttk.Button(btn_frame, text="🔄 Rafraîchir",
-                   command=self._refresh_licenses).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="❌ Révoquer",
-                   command=self._revoke_selected).pack(side='left', padx=5)
-    
-    def _log(self, msg: str):
-        self.log_text.insert('end', f"[{datetime.now():%H:%M:%S}] {msg}\n")
-        self.log_text.see('end')
-    
-    def _generate_key(self):
-        key = LicenseGenerator.generate_key()
-        self.key_entry.delete(0, 'end')
-        self.key_entry.insert(0, key)
-        self._log(f"✅ Clé générée: {key}")
-    
-    def _start_build(self):
-        key = self.key_entry.get().strip() or LicenseGenerator.generate_key()
-        email = self.email_entry.get().strip()
-        
-        config = BuildConfig(
-            license_key=key,
-            email=email,
-            platform=self.platform_var.get(),
-        )
-        
-        self.build_btn.config(state='disabled')
-        self._log(f"🚀 Build: {config.output_name}")
-        
-        def run():
-            success, msg = self.builder.build(config)
-            self.root.after(0, lambda: self._build_finished(success, msg))
-        
-        threading.Thread(target=run).start()
-    
-    def _build_finished(self, success, msg):
-        self.build_btn.config(state='normal')
-        if success:
-            self._log(f"✅ {msg}")
+        if server_path.exists():
+            threading.Thread(
+                target=lambda: subprocess.Popen(
+                    [sys.executable, str(server_path)],
+                    cwd=str(server_path.parent)
+                ),
+                daemon=True
+            ).start()
+            self._log("✅ Serveur démarré sur http://localhost:5000")
         else:
-            self._log(f"❌ {msg}")
+            self._log("❌ Serveur non trouvé")
     
-    def _refresh_licenses(self):
-        self.licenses_listbox.delete(0, 'end')
-        for lic in self.builder.license_db.list_all():
-            status = "✅" if not lic.get("revoked") else "❌"
-            self.licenses_listbox.insert('end', 
-                f"{status} {lic['key']} | {lic.get('email', '')}")
-    
-    def _revoke_selected(self):
-        selection = self.licenses_listbox.curselection()
-        if selection:
-            item = self.licenses_listbox.get(selection[0])
-            key = item.split()[1]
-            self.builder.license_db.revoke(key)
-            self._log(f"❌ Révoquée: {key}")
-            self._refresh_licenses()
-    
-    def run(self):
-        self._log(f"🔐 SafeTrendBot Builder v{VERSION}")
-        self._refresh_licenses()
-        self.root.mainloop()
+    def _generate_master_key(self):
+        """Génère une nouvelle master key."""
+        import secrets
+        new_key = secrets.token_hex(32)
+        
+        builder_path = self.builder.project_root / "builder" / "license_builder.py"
+        
+        if builder_path.exists():
+            content = builder_path.read_text()
+            
+            # Remplacer la master key
+            content = content.replace(
+                'MASTER_KEY = "SafeTrendBot_MasterKey_2024_ChangeMe!"',
+                f'MASTER_KEY = "{new_key}"'
+            )
+            
+            builder_path.write_text(content)
+            self._log(f"🔑 Nouvelle Master Key générée!")
+            self._log(f"   ATTENTION: {new_key}")
+        else:
+            self._log("❌ Fichier non trouvé")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -528,22 +943,25 @@ class BuilderGUI_tk:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    if UI_FRAMEWORK in ("PyQt6", "PyQt5"):
-        app = QtWidgets.QApplication(sys.argv)
-        
-        # Style
-        app.setStyle('Fusion')
-        palette = QtGui.QPalette()
-        palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor(30, 30, 30))
-        palette.setColor(QtGui.QPalette.ColorRole.WindowText, QtCore.Qt.GlobalColor.white)
-        app.setPalette(palette)
-        
-        gui = BuilderGUI()
-        gui.run()
-        sys.exit(app.exec())
-    else:
-        gui = BuilderGUI_tk()
-        gui.run()
+    app = QApplication(sys.argv)
+    
+    # Style
+    app.setStyle('Fusion')
+    
+    # Palette sombre
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(26, 26, 46))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(224, 224, 224))
+    palette.setColor(QPalette.ColorRole.Base, QColor(13, 17, 23))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(22, 27, 34))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(0, 217, 255))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(31, 111, 235))
+    app.setPalette(palette)
+    
+    window = BuilderWindow()
+    window.show()
+    
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

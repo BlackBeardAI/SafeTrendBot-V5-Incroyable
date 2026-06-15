@@ -1,3 +1,6 @@
-# Dépendances serveur d'activation
-flask>=2.3.0
-gunicorn>=21.0.0
+# SafeTrendBot Activation Server — Requirements
+# ==============================================
+
+flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=21.0.0  # Pour production
