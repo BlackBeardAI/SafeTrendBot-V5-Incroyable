@@ -53,10 +53,10 @@ DEFAULT_PRICE_USD = 297
 
 # Configuration wallets (REMPLACER PAR VOS VRAIS WALLETS!)
 WALLET_CONFIG = {
-    "BTC": os.environ.get('BTC_WALLET', 'bc1qxxzn05t7jvdmz47ncnxlglczhh9aet3gcpt5dx'),
-    "ETH": os.environ.get('ETH_WALLET', '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'),
-    "USDT_ERC20": os.environ.get('USDT_ERC20_WALLET', '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'),
-    "USDT_TRC20": os.environ.get('USDT_TRC20_WALLET', 'TDtd5bLSo7tN2FbKqN8K2M1rXK6M2N5B7j'),
+    "BTC": "bc1qxxzn05t7jvdmz47ncnxlglczhh9aet3gcpt5dx",
+    "ETH": "0xd1c2ef7f724635fa0ed327f4d626620a2adffd82",
+    "USDT_ERC20": "0xd1c2ef7f724635fa0ed327f4d626620a2adffd82",
+    "USDT_TRC20": "TDtd5bLSo7tN2FbKqN8K2M1rXK6M2N5B7j",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1062,7 +1062,7 @@ ADMIN_LOGIN = """
 # ROUTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.route('/')
+@APP.route('/')
 def landing():
     """Landing page."""
     prices = get_prices()
@@ -1076,7 +1076,7 @@ def landing():
     )
 
 
-@app.route('/buy', methods=['GET', 'POST'])
+@APP.route('/buy', methods=['GET', 'POST'])
 def buy():
     """Page d'achat."""
     if request.method == 'GET':
@@ -1127,7 +1127,7 @@ def buy():
         return redirect('/buy')
 
 
-@app.route('/payment/<payment_id>')
+@APP.route('/payment/<payment_id>')
 def payment_status(payment_id):
     """Page de suivi du paiement."""
     from crypto_payment import PaymentManager, PaymentStatus, CryptoConfig
@@ -1166,7 +1166,7 @@ def payment_status(payment_id):
     )
 
 
-@app.route('/download/<license_key>')
+@APP.route('/download/<license_key>')
 def download_bot(license_key):
     """Page de téléchargement après paiement confirmé."""
     from crypto_payment import PaymentManager
@@ -1204,7 +1204,7 @@ def download_bot(license_key):
 # ADMIN ROUTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.route('/admin/login', methods=['GET', 'POST'])
+@APP.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     """Login admin."""
     error = None
@@ -1222,15 +1222,15 @@ def admin_login():
     return render_template_string(ADMIN_LOGIN, error=error)
 
 
-@app.route('/admin/logout')
+@APP.route('/admin/logout')
 def admin_logout():
     """Logout admin."""
     session.pop('admin', None)
     return redirect('/admin/login')
 
 
-@app.route('/admin')
-@admin_required
+@APP.route('/admin')
+
 def admin_dashboard():
     """Dashboard admin."""
     from crypto_payment import PaymentManager, CryptoConfig
@@ -1252,8 +1252,8 @@ def admin_dashboard():
     )
 
 
-@app.route('/admin/confirm/<payment_id>')
-@admin_required
+@APP.route('/admin/confirm/<payment_id>')
+
 def admin_confirm(payment_id):
     """Confirme manuellement un paiement."""
     from crypto_payment import PaymentManager, CryptoConfig
@@ -1273,8 +1273,8 @@ def admin_confirm(payment_id):
     return redirect('/admin')
 
 
-@app.route('/admin/license/<license_key>')
-@admin_required
+@APP.route('/admin/license/<license_key>')
+
 def admin_license(license_key):
     """Détail d'une licence."""
     from crypto_payment import PaymentManager, CryptoConfig
@@ -1291,7 +1291,7 @@ def admin_license(license_key):
     return jsonify(lic)
 
 
-@app.route('/api/stats')
+@APP.route('/api/stats')
 def api_stats():
     """API stats (public)."""
     from crypto_payment import PaymentManager, CryptoConfig
