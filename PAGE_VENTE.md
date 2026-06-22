@@ -10,7 +10,7 @@
 
 Multi-broker. Stratégies adaptatives. Interface premium. **Sans abonnement.**
 
-### 💰 Prix : 5 000 € — Paiement unique en crypto
+### 💰 Prix : 10 000 € — Paiement unique en crypto
 > Pas d'abonnement. Pas de frais cachés. C'est **à toi, pour toujours.**
 
 ---
@@ -88,7 +88,7 @@ SafeTrendBot V5 démarre toujours en mode démo. **Zéro risque de faire une err
 
 ---
 
-## 💎 Pourquoi 5 000 € ?
+## 💎 Pourquoi 10 000 € ?
 
 Parce que c'est **le prix de ta liberté de trader.**
 
@@ -106,20 +106,20 @@ Parce que c'est **le prix de ta liberté de trader.**
 > → 2 400 €/an
 > → **12 000 € en 5 ans**
 
-> **SafeTrendBot V5 :** 5 000 € **une seule fois**
+> **SafeTrendBot V5 :** 10 000 € **une seule fois**
 > → Mises à jour à vie
-> → **Économie de 7 000 € sur 5 ans**
+> → **Économie de 2 000 € sur 5 ans**
 
 Et au bout de 5 ans, le concurrent te redemande encore 200€. SafeTrendBot V5, non.
 
-> 💡 *5 000 €, c'est moins que ce que la plupart des traders perdent en un mois à cause des émotions.*
+> 💡 *10 000 €, c'est moins que ce que la plupart des traders perdent en deux mois à cause des émotions.*
 
 ---
 
 ## 🛠️ Comment Ça Marche — 3 Étapes
 
 ### 1️⃣ Paie en Crypto
-Envoie 5 000 € (au cours BTC) sur l'une des adresses ci-dessous. Une transaction. C'est tout.
+Envoie 10 000 € (au cours BTC) sur l'une des adresses ci-dessous. Une transaction. C'est tout.
 
 ### 2️⃣ Reçois le .exe + Ta Clé de Licence
 Sous 24h, tu reçois par Telegram le programme Windows et ta clé d'activation unique.
@@ -134,7 +134,7 @@ Lance le .exe, suis l'onboarding wizard, connecte ton broker, choisis ton profil
 ## 💬 Témoignages
 
 > 🏴‍☠️ **Marc D., trader indépendant**
-> *« Je payais 180€/mois pour un bot SaaS qui plantait toutes les semaines. SafeTrendBot V5 m'a coûté 5000€ une fois et tourne sans accroc depuis 4 mois. Le mode paper trading m'a permis de valider ma stratégie avant de risquer mon capital. Jamais je ne reviens en arrière. »*
+> *« Je payais 180€/mois pour un bot SaaS qui plantait toutes les semaines. SafeTrendBot V5 m'a coûté 10000€ une fois et tourne sans accroc depuis 4 mois. Le mode paper trading m'a permis de valider ma stratégie avant de risquer mon capital. Jamais je ne reviens en arrière. »*
 
 > 🏴‍☠️ **Sophie L., investisseuse crypto**
 > *« Le multi-broker est un game changer. J'ai mes positions MT5 et Binance dans la même interface. Les alertes Telegram me permettent de tout suivre depuis mon tel sans ouvrir le PC. Worth every satoshi. »*
@@ -171,7 +171,7 @@ Une licence = une machine active. Contacte le support pour les migrations.
 
 ## 💳 Paiement
 
-### Prix : 5 000 € — Paiement unique en crypto
+### Prix : 10 000 € — Paiement unique en crypto
 
 > Pas d'abonnement. Pas de reconduction. Pas de frais cachés. **Tu possèdes le logiciel.**
 
@@ -186,7 +186,7 @@ bc1qxxzn05t7jvdmz47ncnxlglczhh9aet3gcpt5dx
 ```
 
 ### 📋 Mode d'emploi
-1. Envoie l'équivalent de 5 000 € au cours BTC du moment.
+1. Envoie l'équivalent de 10 000 € au cours BTC du moment.
 2. Envoie une preuve de transaction (txid) à **@BlackBeardAI** sur Telegram.
 3. Reçois ton `.exe` + clé de licence sous 24h.
 

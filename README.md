@@ -113,7 +113,7 @@ python main.py --headless
 
 ## 💰 Tarif
 
-**Prix unique: 5000€** (payable en crypto au cours du BTC)
+**Prix unique: 10000€** (payable en crypto au cours du BTC)
 
 - Paiement one-shot en BTC/ETH/USDT
 - Pas d'abonnement, pas de frais récurrents

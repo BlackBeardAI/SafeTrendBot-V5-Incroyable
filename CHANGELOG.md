@@ -5,7 +5,7 @@
 ### Breaking changes
 - **Suppression du système de protection** (license_manager, anti_tamper, extreme_guard, encryption → stubs neutralisés)
 - **Consolidation des 4 engines → 1** (TradingEngineV4 unique + bot_types.py)
-- **Prix fixé à 5000€** en crypto (one-shot)
+- **Prix fixé à 10000€** en crypto (one-shot)
 
 ### Features ajoutées
 - Mode démo par défaut (paper trading, pas live)

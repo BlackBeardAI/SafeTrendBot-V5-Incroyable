@@ -310,7 +310,7 @@ cat app/core/__license_embed__.py
 
 Le processus complet pour livrer le bot à un client:
 
-1. **Client paie 5000€ en crypto** (USDT/USDC/BTC/ETH)
+1. **Client paie 10000€ en crypto** (USDT/USDC/BTC/ETH)
 2. **Confirmer la transaction sur blockchain** — vérifier:
    - Le montant exact
    - L'adresse d'envoi
@@ -339,8 +339,8 @@ Le processus complet pour livrer le bot à un client:
 Il est recommandé de maintenir un fichier de suivi des clés générées (hors git):
 ```
 # keys_log.txt (NE JAMAIS COMMITTER)
-Date: 2026-06-22 | Client: XXX | Clé: STB5-AB12-CD34-EF56 | TX: 0x... | Montant: 5000 USDT
-Date: 2026-06-25 | Client: YYY | Clé: STB5-GH78-IJ90-KL12 | TX: 0x... | Montant: 5000 USDT
+Date: 2026-06-22 | Client: XXX | Clé: STB5-AB12-CD34-EF56 | TX: 0x... | Montant: 10000 USDT |
+Date: 2026-06-25 | Client: YYY | Clé: STB5-GH78-IJ90-KL12 | TX: 0x... | Montant: 10000 USDT |
 ```
 
 ---

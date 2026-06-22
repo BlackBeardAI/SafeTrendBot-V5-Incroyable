@@ -1,6 +1,6 @@
 # 🚀 SafeTrendBot V5 — Guide Client
 
-> **Version 5.4.0** | Bot de trading automatisé multi-broker | Prix: 5000€
+> **Version 5.4.0** | Bot de trading automatisé multi-broker | Prix: 10000€
 >
 > Bienvenue dans SafeTrendBot V5, votre assistant de trading automatisé professionnel. Ce guide vous accompagne pas à pas, de l'installation jusqu'au trading en direct. Aucune compétence technique n'est requise — suivez simplement les étapes.
 
@@ -372,7 +372,7 @@ Le trading automatisé est puissant, mais nécessite de la prudence. Suivez ces 
 
 | Élément | Détail |
 |---------|--------|
-| **Prix** | 5000€ |
+| **Prix** | 10000€ |
 | **Conversion** | Au cours du BTC au moment du paiement |
 | **Modalité** | Paiement one-shot (pas d'abonnement) |
 | **Livraison** | Réception du `.exe` + clé de licence après confirmation |
