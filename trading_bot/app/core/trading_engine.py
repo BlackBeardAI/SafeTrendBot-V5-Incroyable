@@ -744,17 +744,7 @@ class TradingEngine:
 
 def main():
     """Point d'entrée pour le bot."""
-    from .license_manager import auto_activate, LicenseStatus, LicenseManager
-    
-    # 1. Vérifier licence
-    lm = LicenseManager()
-    status = lm.check_license(verbose=True)
-    
-    if status != LicenseStatus.VALID:
-        logger.error(f"Licence invalide: {status.name}")
-        sys.exit(1)
-    
-    logger.info("Licence validée — démarrage SafeTrendBot")
+    logger.info("SafeTrendBot — démarrage (mode libre)")
     
     # 2. Démarrer moteur
     engine = TradingEngine()

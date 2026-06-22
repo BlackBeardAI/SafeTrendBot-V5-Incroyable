@@ -29,10 +29,6 @@ from app.core.slippage_learner import SlippageLearner, SlippageProfile
 from app.core.auto_hedge import AutoHedge, HedgeRecommendation
 from app.core.voice_alerts import VoiceAlertManager
 
-# V5.3 — Commercial
-from app.core.license_manager import LicenseManager
-from app.core.anti_tamper import AntiTamper
-
 __all__ = [
     'RegimeDetector', 'MarketRegime', 'RegimeResult',
     'AdaptiveStrategyVoter', 'create_adaptive_voter', 'AdaptiveVoteResult',
@@ -40,7 +36,6 @@ __all__ = [
     'PerformanceTracker', 'PerformanceSnapshot',
     'TradingEngineV4', 'BotStatus', 'BotState',
     'SystemTrayManager',
-    # V5 Extraordinaire
     'WalkForwardAnalysis', 'WFAParams', 'WFAResult',
     'SmartOrderRouter', 'ExecutionType', 'ExecutionResult',
     'MLRegimeDetector', 'MLRegimeResult',
@@ -51,7 +46,6 @@ __all__ = [
     'WebDashboard',
     'ParallelBacktest', 'BacktestResult',
     'DecisionJournal', 'DecisionRecord',
-    # V5.2 Ultra
     'PropFirmManager', 'PropFirmRules',
     'RiskOffManager', 'EconomicEvent',
     'AutoReporting', 'WeeklyReport',
@@ -59,7 +53,4 @@ __all__ = [
     'SlippageLearner', 'SlippageProfile',
     'AutoHedge', 'HedgeRecommendation',
     'VoiceAlertManager',
-    # V5.3 Commercial
-    'LicenseManager',
-    'AntiTamper',
 ]

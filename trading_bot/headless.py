@@ -12,7 +12,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.core.license_manager import LicenseManager, LicenseStatus
 from app.core.trading_engine import TradingEngine
 
 # Configuration logging
@@ -53,16 +52,7 @@ class SafeTrendBotServer:
         logger.info("SafeTrendBot V5 — Mode Headless")
         logger.info("=" * 50)
         
-        # Vérifier licence
-        lm = LicenseManager()
-        status = lm.check_license()
-        
-        if status != LicenseStatus.VALID:
-            logger.error(f"Licence invalide: {status.name}")
-            return False
-        
-        logger.info("✅ Licence validée")
-        
+        logger.info("Mode libre — démarrage")
         # Démarrer moteur
         self.engine = TradingEngine()
         self.engine.start()
