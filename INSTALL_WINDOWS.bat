@@ -1,15 +1,14 @@
 @echo off
-chcp 65001 >nul 2>&1
 title SafeTrendBot V5 - Installation
 
 echo.
-echo  ╔═══════════════════════════════════════════════════════════════╗
-echo  ║                    SafeTrendBot V5                            ║
-echo  ║              Installation automatique                         ║
-echo  ╚═══════════════════════════════════════════════════════════════╝
+echo  ============================================================
+echo  |                    SafeTrendBot V5                        |
+echo  |              Installation automatique                      |
+echo  ============================================================
 echo.
 
-:: 1. Vérifier Python
+:: 1. Verifier Python
 where python >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo  [ERREUR] Python n'est pas installe!
@@ -21,7 +20,7 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-:: 2. Vérifier la version Python
+:: 2. Verifier la version Python
 python -c "import sys; exit(0 if sys.version_info>=(3,11) else 1)" 2>nul
 if %ERRORLEVEL% neq 0 (
     echo  [ERREUR] Python 3.11+ requis!
@@ -36,7 +35,7 @@ echo  [1/4] Python detecte:
 python --version
 echo.
 
-:: 3. Installer les dépendances
+:: 3. Installer les dependances
 echo  [2/4] Installation des dependances...
 cd /d "%~dp0trading_bot"
 python -m pip install --upgrade pip >nul 2>&1
@@ -50,10 +49,9 @@ if %ERRORLEVEL% neq 0 (
 )
 echo.
 
-:: 4. Créer le raccourci bureau
+:: 4. Creer le raccourci bureau
 echo  [3/4] Creation du raccourci bureau...
-powershell -NoProfile -Command ^
-  "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = '%~dp0trading_bot\main.py'; $sc.IconLocation = '%SystemRoot%\System32\shell32.dll,13'; $sc.WorkingDirectory = '%~dp0trading_bot'; $sc.Description = 'SafeTrendBot V5 - Trading Bot'; $sc.Save()" 2>nul
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = '%~dp0trading_bot\main.py'; $sc.IconLocation = '%SystemRoot%\System32\shell32.dll,13'; $sc.WorkingDirectory = '%~dp0trading_bot'; $sc.Description = 'SafeTrendBot V5 - Trading Bot'; $sc.Save()" 2>nul
 echo  [OK] Raccourci cree sur le bureau
 echo.
 
@@ -68,15 +66,15 @@ if %ERRORLEVEL% neq 0 (
 )
 echo.
 
-echo  ╔═══════════════════════════════════════════════════════════════╗
-echo  ║                    INSTALLATION TERMINEE!                     ║
-echo  ║                                                                 ║
-echo  ║  Pour lancer SafeTrendBot:                                     ║
-echo  ║    - Double-cliquez le raccourci sur le bureau                 ║
-echo  ║    - Ou: python trading_bot\main.py                            ║
-echo  ║                                                                 ║
-echo  ║  Pour creer un installeur .msi:                                ║
-echo  ║    python build_msi.py                                          ║
-echo  ╚═══════════════════════════════════════════════════════════════╝
+echo  ============================================================
+echo  |                  INSTALLATION TERMINEE!                   |
+echo  |                                                            |
+echo  |  Pour lancer SafeTrendBot:                                 |
+echo  |    - Double-cliquez le raccourci sur le bureau             |
+echo  |    - Ou: python trading_bot\main.py                        |
+echo  |                                                            |
+echo  |  Pour creer un installeur .msi:                            |
+echo  |    python build_msi.py                                     |
+echo  ============================================================
 echo.
 pause

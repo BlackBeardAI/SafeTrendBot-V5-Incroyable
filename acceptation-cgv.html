@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeTrendBot V5 — Acceptation des CGV</title>
+<style>
+  :root{
+    --bg:#0d1117;
+    --bg2:#16213e;
+    --accent:#00d9ff;
+    --accent2:#0080ff;
+    --danger:#ff3b3b;
+    --danger-bg:rgba(255,59,59,0.08);
+    --ok:#00ffa3;
+    --glass:rgba(22,33,62,0.55);
+    --glass-border:rgba(0,217,255,0.18);
+    --text:#e6edf3;
+    --muted:#8b98a9;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 80% -10%,#16213e 0%,transparent 60%),
+               radial-gradient(900px 500px at -10% 20%,#0a1a3a 0%,transparent 55%),
+               var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    min-height:100vh;
+    padding-bottom:80px;
+  }
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* HEADER */
+  header{
+    text-align:center;
+    padding:40px 20px 20px;
+    background:linear-gradient(180deg,rgba(0,217,255,0.06),transparent);
+    border-bottom:1px solid var(--glass-border);
+  }
+  .logo{
+    font-size:14px;
+    letter-spacing:4px;
+    color:var(--accent);
+    text-transform:uppercase;
+    font-weight:700;
+    margin-bottom:10px;
+  }
+  .logo .pirate{font-size:28px;vertical-align:middle}
+  h1{
+    font-size:clamp(22px,4vw,34px);
+    background:linear-gradient(90deg,var(--accent),#7af0ff);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;
+    margin-bottom:6px;
+    font-weight:800;
+    letter-spacing:.5px;
+  }
+  .subtitle{color:var(--muted);font-size:14px}
+  .badges{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .badge{
+    font-size:11px;padding:4px 10px;border-radius:20px;
+    background:rgba(0,217,255,0.08);border:1px solid var(--glass-border);
+    color:var(--accent);
+  }
+
+  /* CONTAINER */
+  .wrap{max-width:880px;margin:0 auto;padding:24px 18px}
+  .card{
+    background:var(--glass);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--glass-border);
+    border-radius:var(--radius);
+    padding:22px 22px;
+    margin-bottom:18px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.35);
+  }
+  .card h2{
+    font-size:18px;color:var(--accent);margin-bottom:4px;
+    display:flex;align-items:center;gap:8px;
+  }
+  .card .sec-sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+
+  /* PROGRESS */
+  .progress-wrap{position:sticky;top:0;z-index:50;margin-bottom:18px}
+  .progress{
+    background:var(--glass);backdrop-filter:blur(10px);
+    border:1px solid var(--glass-border);border-radius:12px;
+    padding:10px 16px;display:flex;align-items:center;gap:12px;
+    justify-content:space-between;flex-wrap:wrap;
+  }
+  .progress .count{font-weight:700;color:var(--accent);font-size:15px}
+  .progress .bar{
+    flex:1;min-width:160px;height:8px;border-radius:6px;
+    background:rgba(255,255,255,0.07);overflow:hidden;
+  }
+  .progress .bar > div{
+    height:100%;width:0%;transition:width .35s ease;
+    background:linear-gradient(90deg,var(--accent),var(--ok));
+  }
+  .progress .status{font-size:12px;color:var(--muted)}
+
+  /* FORM */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  label.field{display:block;font-size:13px;color:var(--muted);margin-bottom:4px;font-weight:600}
+  input[type=text],input[type=email],select,textarea{
+    width:100%;padding:11px 13px;border-radius:10px;
+    background:rgba(13,17,23,0.7);border:1px solid rgba(0,217,255,0.15);
+    color:var(--text);font-size:14px;font-family:inherit;
+    transition:border-color .2s,box-shadow .2s;
+  }
+  input:focus,select:focus,textarea:focus{
+    outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(0,217,255,0.15);
+  }
+  select option{background:#0d1117;color:var(--text)}
+  .err{color:var(--danger);font-size:12px;margin-top:4px;display:none}
+  .err.show{display:block}
+
+  /* CHECKBOXES */
+  .check-item{
+    display:flex;gap:12px;align-items:flex-start;
+    padding:12px 14px;border-radius:10px;
+    background:rgba(13,17,23,0.4);
+    border:1px solid rgba(255,255,255,0.04);
+    margin-bottom:8px;cursor:pointer;
+    transition:background .2s,border-color .2s;
+  }
+  .check-item:hover{background:rgba(0,217,255,0.05);border-color:var(--glass-border)}
+  .check-item.checked{border-color:rgba(0,255,163,0.3);background:rgba(0,255,163,0.04)}
+  .check-item input{
+    appearance:none;-webkit-appearance:none;
+    width:22px;height:22px;min-width:22px;margin-top:2px;
+    border:2px solid rgba(0,217,255,0.3);border-radius:6px;
+    background:rgba(13,17,23,0.7);cursor:pointer;
+    position:relative;transition:all .2s;
+  }
+  .check-item input:checked{
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    border-color:var(--accent);
+  }
+  .check-item input:checked::after{
+    content:'✓';position:absolute;top:-2px;left:3px;
+    color:#0d1117;font-weight:900;font-size:14px;
+  }
+  .check-item .ctext{font-size:13.5px;line-height:1.5}
+  .check-item .ctext a{font-weight:700}
+  .check-num{
+    display:inline-block;min-width:22px;font-weight:700;color:var(--accent);
+    font-size:12px;
+  }
+
+  /* RISK BOX */
+  .risk-box{
+    border:2px solid var(--danger);
+    background:var(--danger-bg);
+    border-radius:12px;padding:18px;
+    margin-bottom:14px;
+    box-shadow:0 0 24px rgba(255,59,59,0.12);
+  }
+  .risk-box .rtitle{
+    color:var(--danger);font-weight:800;font-size:15px;margin-bottom:8px;
+    letter-spacing:.5px;
+  }
+  .risk-box p{font-size:13.5px;color:#ffb3b3}
+
+  /* TEXTAREA CONFIRM */
+  .confirm-template{
+    font-size:12px;color:var(--muted);
+    background:rgba(13,17,23,0.6);border:1px dashed rgba(0,217,255,0.2);
+    border-radius:8px;padding:10px;margin-bottom:10px;white-space:pre-wrap;
+  }
+  textarea.confirm{min-height:150px;resize:vertical}
+
+  /* BUTTONS */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:14px 22px;border-radius:12px;border:none;cursor:pointer;
+    font-size:15px;font-weight:700;letter-spacing:.5px;
+    font-family:inherit;transition:all .2s;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    color:#0d1117;box-shadow:0 6px 24px rgba(0,217,255,0.25);
+  }
+  .btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,217,255,0.35)}
+  .btn-primary:disabled{
+    background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.3);
+    cursor:not-allowed;box-shadow:none;
+  }
+  .btn-secondary{
+    background:rgba(0,217,255,0.08);color:var(--accent);
+    border:1px solid var(--glass-border);
+  }
+  .btn-secondary:hover{background:rgba(0,217,255,0.15)}
+  .btn-danger{
+    background:rgba(255,59,59,0.12);color:var(--danger);
+    border:1px solid rgba(255,59,59,0.3);
+  }
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+
+  /* GENERATE */
+  .generate-wrap{text-align:center;padding:30px 22px}
+  .msg{
+    min-height:22px;font-size:13px;margin-top:12px;
+    color:var(--danger);font-weight:600;
+  }
+  .msg.ok{color:var(--ok)}
+  .contract-output{
+    margin-top:20px;text-align:left;display:none;
+  }
+  .contract-output.show{display:block}
+  textarea.contract{
+    width:100%;min-height:420px;resize:vertical;
+    font-family:'Courier New',monospace;font-size:12px;
+    background:#06090d;border:1px solid var(--glass-border);
+    color:#aef0ff;border-radius:10px;padding:16px;
+  }
+  .send-info{
+    margin-top:14px;padding:14px;border-radius:10px;
+    background:rgba(0,217,255,0.06);border:1px solid var(--glass-border);
+    font-size:13.5px;text-align:center;
+  }
+  .send-info b{color:var(--accent)}
+
+  /* FOOTER */
+  footer{
+    text-align:center;padding:30px 20px;
+    color:var(--muted);font-size:12.5px;
+    border-top:1px solid var(--glass-border);
+    margin-top:30px;
+  }
+  footer a{font-weight:600}
+  .pulse{animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .anchor{scroll-margin-top:80px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="pirate">🏴‍☠️</span> SafeTrendBot V5</div>
+  <h1>Acceptation des Conditions Générales de Vente</h1>
+  <div class="subtitle">Étape obligatoire avant paiement</div>
+  <div class="badges">
+    <span class="badge">Version 5.4.0</span>
+    <span class="badge">Prix : 10 000€</span>
+    <span class="badge">Paiement Crypto</span>
+    <span class="badge">Licence 1 PC</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- PROGRESS -->
+  <div class="progress-wrap">
+    <div class="progress">
+      <div class="count" id="counter">0/18 acceptations</div>
+      <div class="bar"><div id="barFill"></div></div>
+      <div class="status" id="status">Complétez toutes les étapes</div>
+    </div>
+  </div>
+
+  <!-- SECTION A -->
+  <div class="card anchor" id="secA">
+    <h2>👤 Section A — Identité du client</h2>
+    <div class="sec-sub">Tous les champs sont obligatoires pour générer le contrat.</div>
+    <div class="grid">
+      <div>
+        <label class="field" for="fullname">Nom complet *</label>
+        <input type="text" id="fullname" placeholder="Jean Dupont" autocomplete="name">
+        <div class="err" id="err-fullname">Veuillez saisir votre nom complet.</div>
+      </div>
+      <div>
+        <label class="field" for="email">Email *</label>
+        <input type="email" id="email" placeholder="vous@exemple.com" autocomplete="email">
+        <div class="err" id="err-email">Email invalide.</div>
+      </div>
+      <div>
+        <label class="field" for="telegram">Telegram (pour livraison) *</label>
+        <input type="text" id="telegram" placeholder="@pseudo">
+        <div class="err" id="err-telegram">Veuillez saisir votre identifiant Telegram.</div>
+      </div>
+      <div>
+        <label class="field" for="country">Pays *</label>
+        <select id="country">
+          <option value="">— Sélectionner —</option>
+          <option value="France">France</option>
+          <option value="Belgique">Belgique</option>
+          <option value="Suisse">Suisse</option>
+          <option value="Canada">Canada</option>
+          <option value="Autre">Autre</option>
+        </select>
+        <div class="err" id="err-country">Veuillez sélectionner votre pays.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION B -->
+  <div class="card anchor" id="secB">
+    <h2>✅ Section B — Acceptation des CGV (17 articles)</h2>
+    <div class="sec-sub">Vous DEVEZ cocher toutes les cases. Chaque case renvoie à l'article concerné des <a href="CGV.md" target="_blank">CGV complètes</a>.</div>
+    <div id="checksContainer"></div>
+  </div>
+
+  <!-- SECTION C -->
+  <div class="card anchor" id="secC">
+    <h2>⚠️ Section C — Avertissement de risque</h2>
+    <div class="sec-sub">Lecture et acceptation obligatoires.</div>
+    <div class="risk-box">
+      <div class="rtitle">⚠️ AVERTISSEMENT DE RISQUE</div>
+      <p>Le trading de produits financiers comporte un risque élevé de perte en capital. Le levier amplifie les gains ET les pertes. Vous pouvez perdre la totalité de votre investissement. SafeTrendBot V5 est un outil d'automatisation qui ne garantit aucun résultat. N'investissez jamais plus que ce que vous pouvez vous permettre de perdre.</p>
+    </div>
+    <label class="check-item" id="riskLabel" data-check="risk">
+      <input type="checkbox" id="riskAccept" data-cgv="risk">
+      <span class="ctext"><span class="check-num">18.</span> J'ai lu et compris l'avertissement de risque ci-dessus.</span>
+    </label>
+  </div>
+
+  <!-- SECTION D -->
+  <div class="card anchor" id="secD">
+    <h2>📝 Section D — Confirmation finale</h2>
+    <div class="sec-sub">Copiez le texte ci-dessous dans le champ, en remplaçant <b>[mon nom]</b> par votre vrai nom.</div>
+    <div class="confirm-template" id="confirmTemplate">Je soussigné(e) [mon nom], confirme avoir lu et accepté les CGV de SafeTrendBot V5.
+Je comprends que ce logiciel ne garantit aucun profit et que le trading comporte un risque de perte totale.
+Je m'engage à tester en paper trading avant d'utiliser du capital réel.
+Je comprends qu'aucun remboursement n'est possible après livraison.
+J'achète SafeTrendBot V5 pour 10000€ en crypto-monnaie.</div>
+    <div style="margin-bottom:6px">
+      <button class="btn btn-secondary" id="copyTemplate" type="button">📋 Copier le modèle</button>
+    </div>
+    <label class="field" for="confirmText">Texte de confirmation (avec votre vrai nom) *</label>
+    <textarea class="confirm" id="confirmText" placeholder="Collez ici le texte ci-dessus en remplaçant [mon nom]..."></textarea>
+    <div class="err" id="err-confirm">Le texte doit contenir le modèle et "[mon nom]" doit être remplacé par votre vrai nom.</div>
+  </div>
+
+  <!-- SECTION E -->
+  <div class="card anchor generate-wrap" id="secE">
+    <h2>📜 Section E — Génération du contrat d'achat</h2>
+    <div class="sec-sub">Le contrat n'est générable que lorsque TOUTES les étapes sont validées.</div>
+    <button class="btn btn-primary" id="generateBtn" disabled>⚙️ GÉNÉRER LE CONTRAT D'ACHAT</button>
+    <div class="msg" id="genMsg"></div>
+
+    <div class="contract-output" id="contractOutput">
+      <label class="field" for="contractText">Contrat généré (lecture seule)</label>
+      <textarea class="contract" id="contractText" readonly></textarea>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="copyBtn" type="button">📋 COPIER LE CONTRAT</button>
+        <button class="btn btn-secondary" id="downloadBtn" type="button">⬇️ TÉLÉCHARGER LE CONTRAT (.txt)</button>
+      </div>
+      <div class="send-info">
+        📤 Envoyez ce contrat à <b>@BlackBeardAI</b> sur Telegram <b>AVANT</b> d'effectuer le paiement.<br>
+        Le vendeur confirmera la réception puis vous communiquera les wallets pour le règlement.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <div>⚖️ En payant, le client accepte pleinement les CGV. Ce contrat constitue une preuve d'acceptation légale.</div>
+  <div style="margin-top:8px">📄 <a href="CGV.md" target="_blank">Consulter les CGV complètes (CGV.md)</a></div>
+  <div style="margin-top:10px;opacity:.7">© 2026 BlackBeardAI — SafeTrendBot V5.4.0 · GitHub : <a href="https://github.com/BlackBeardAI/SafeTrendBot-V5-Incroyable" target="_blank">BlackBeardAI/SafeTrendBot-V5-Incroyable</a></div>
+</footer>
+
+<script>
+// ===== CONFIG =====
+const WALLET_BTC = "bc1qxxzn05t7jvdmz47ncnxlglczhh9aet3gcpt5dx";
+const WALLET_ETH = "0xd1c2ef7f724635fa0ed327f4d626620a2adffd82";
+const TELEGRAM = "@BlackBeardAI";
+const PRICE = "10 000€";
+
+// ===== 17 CGV CHECKBOXES =====
+const CGV_ITEMS = [
+  {n:1, t:"J'ai lu et accepte les 17 articles des CGV", link:'CGV.md'},
+  {n:2, t:"Je comprends que SafeTrendBot V5 est un LOGICIEL, pas un conseil en investissement financier (Art. 2 et 9)", link:'CGV.md'},
+  {n:3, t:"Je comprends que le prix est de 10000€ payable en crypto (BTC/ETH/USDT) au cours du BTC (Art. 3)", link:'CGV.md'},
+  {n:4, t:"Je comprends que le paiement est ONE-SHOT et non remboursable après livraison (Art. 3 et 11)", link:'CGV.md'},
+  {n:5, t:"Je comprends que la livraison se fait sous 24-48h après confirmation blockchain (Art. 5)", link:'CGV.md'},
+  {n:6, t:"Je comprends que la licence est pour 1 PC, non-transférable simultanément (Art. 6)", link:'CGV.md'},
+  {n:7, t:"Je m'engage à NE PAS reverse-engineer, copier, distribuer ou partager le .exe (Art. 6.2)", link:'CGV.md'},
+  {n:8, t:"Je comprends que les mises à jour sont gratuites à vie, sans fréquence garantie (Art. 7)", link:'CGV.md'},
+  {n:9, t:"Je comprends que le support se fait par Telegram, sans garantie de délai (Art. 7.2)", link:'CGV.md'},
+  {n:10, t:"JE RECONNAIS QU'AUCUN PROFIT N'EST GARANTI (Art. 8.1)", link:'CGV.md'},
+  {n:11, t:"Je comprends que le trading comporte un RISQUE DE PERTE INTÉGRALE DU CAPITAL (Art. 10)", link:'CGV.md'},
+  {n:12, t:"Je comprends que les performances passées (backtests) ne garantissent pas les performances futures (Art. 8.1)", link:'CGV.md'},
+  {n:13, t:"Je comprends que le Vendeur n'est pas responsable de mes pertes de trading (Art. 8.2)", link:'CGV.md'},
+  {n:14, t:"Je comprends que la responsabilité du Vendeur est limitée au prix d'achat (Art. 8.2)", link:'CGV.md'},
+  {n:15, t:"Je comprends qu'UNE FOIS LE PRODUIT LIVRÉ, AUCUN REMBOURSEMENT N'EST POSSIBLE (Art. 11)", link:'CGV.md'},
+  {n:16, t:"Je m'engage à TESTER EN PAPER TRADING avant d'utiliser de l'argent réel (Art. 8.1)", link:'CGV.md'},
+  {n:17, t:"Je comprends que le fait de payer vaut acceptation pleine et entière des CGV (Art. 16.3)", link:'CGV.md'}
+];
+
+// Render checkboxes
+const container = document.getElementById('checksContainer');
+CGV_ITEMS.forEach(it=>{
+  const label = document.createElement('label');
+  label.className = 'check-item';
+  label.dataset.check = 'cgv'+it.n;
+  label.innerHTML = `
+    <input type="checkbox" data-cgv="${it.n}">
+    <span class="ctext"><span class="check-num">${it.n}.</span> ${escapeHtml(it.t)} <a href="${it.link}" target="_blank" title="Voir l'article">⧉</a></span>
+  `;
+  container.appendChild(label);
+});
+
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+// ===== ELEMENTS =====
+const el = {
+  fullname:document.getElementById('fullname'),
+  email:document.getElementById('email'),
+  telegram:document.getElementById('telegram'),
+  country:document.getElementById('country'),
+  risk:document.getElementById('riskAccept'),
+  confirm:document.getElementById('confirmText'),
+  generateBtn:document.getElementById('generateBtn'),
+  counter:document.getElementById('counter'),
+  barFill:document.getElementById('barFill'),
+  status:document.getElementById('status'),
+  genMsg:document.getElementById('genMsg'),
+  contractOutput:document.getElementById('contractOutput'),
+  contractText:document.getElementById('contractText'),
+  copyBtn:document.getElementById('copyBtn'),
+  downloadBtn:document.getElementById('downloadBtn'),
+  copyTemplate:document.getElementById('copyTemplate'),
+  riskLabel:document.getElementById('riskLabel')
+};
+
+const TOTAL_CHECKS = 18; // 17 + 1 risque
+
+// ===== HELPERS =====
+function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
+
+function confirmTemplate(){return document.getElementById('confirmTemplate').textContent.trim()}
+
+function validConfirm(){
+  const txt = el.confirm.value.trim();
+  const tpl = confirmTemplate();
+  // doit contenir les phrases clés du modèle (sans exiger mot à mot exact)
+  const mustContain = [
+    "confirme avoir lu et accepté les CGV",
+    "ne garantit aucun profit",
+    "risque de perte totale",
+    "paper trading",
+    "aucun remboursement",
+    "10000€"
+  ];
+  const hasAll = mustContain.every(s=>txt.toLowerCase().includes(s.toLowerCase()));
+  const noPlaceholder = !txt.includes("[mon nom]") && txt.length > tpl.length - 20;
+  return hasAll && noPlaceholder && txt.length >= 80;
+}
+
+function countChecks(){
+  const cgv = document.querySelectorAll('input[data-cgv]:checked').length;
+  return cgv; // inclut risk car data-cgv="risk"
+}
+
+function countAll(){
+  // compte les 17 cases CGV + 1 risque
+  const cgvChecks = document.querySelectorAll('#checksContainer input[type=checkbox]');
+  let c = 0;
+  cgvChecks.forEach(i=>{if(i.checked)c++});
+  if(el.risk.checked)c++;
+  return c;
+}
+
+function identityValid(){
+  return el.fullname.value.trim().length>=2
+    && validEmail(el.email.value.trim())
+    && el.telegram.value.trim().length>=2
+    && el.country.value!=="";
+}
+
+function updateUI(){
+  const c = countAll();
+  el.counter.textContent = c + "/" + TOTAL_CHECKS + " acceptations";
+  el.barFill.style.width = (c/TOTAL_CHECKS*100) + "%";
+
+  // styling des items cochés
+  document.querySelectorAll('.check-item').forEach(label=>{
+    const input = label.querySelector('input[type=checkbox]');
+    label.classList.toggle('checked', input && input.checked);
+  });
+
+  const idOk = identityValid();
+  const checksOk = c===TOTAL_CHECKS;
+  const confirmOk = validConfirm();
+
+  const allOk = idOk && checksOk && confirmOk;
+  el.generateBtn.disabled = !allOk;
+
+  // status message
+  if(allOk){
+    el.status.textContent = "✅ Tout est validé — génération possible";
+    el.status.style.color = "var(--ok)";
+    el.genMsg.textContent = "Prêt à générer le contrat.";
+    el.genMsg.className = "msg ok";
+  } else {
+    el.status.textContent = "Complétez toutes les étapes";
+    el.status.style.color = "var(--muted)";
+    // message d'aide
+    const missing = [];
+    if(!idOk) missing.push("identité");
+    if(!checksOk) missing.push((TOTAL_CHECKS - c) + " case(s) à cocher");
+    if(!confirmOk) missing.push("confirmation finale");
+    el.genMsg.textContent = "⏳ Manquant : " + missing.join(" · ");
+    el.genMsg.className = "msg";
+  }
+}
+
+// ===== EVENTS =====
+['input','change'].forEach(ev=>{
+  document.addEventListener(ev, updateUI);
+});
+el.confirm.addEventListener('input', updateUI);
+
+// validation visuelle des champs
+function showErr(id,show){document.getElementById(id).classList.toggle('show',show)}
+el.fullname.addEventListener('blur',()=>showErr('err-fullname', el.fullname.value.trim().length<2));
+el.email.addEventListener('blur',()=>showErr('err-email', !validEmail(el.email.value.trim())));
+el.telegram.addEventListener('blur',()=>showErr('err-telegram', el.telegram.value.trim().length<2));
+el.country.addEventListener('change',()=>showErr('err-country', el.country.value===""));
+el.confirm.addEventListener('blur',()=>showErr('err-confirm', !validConfirm() && el.confirm.value.length>0));
+
+// copier modèle
+el.copyTemplate.addEventListener('click', async()=>{
+  try{
+    await navigator.clipboard.writeText(confirmTemplate());
+    el.copyTemplate.textContent = "✅ Modèle copié !";
+    setTimeout(()=>el.copyTemplate.textContent="📋 Copier le modèle",1800);
+  }catch(e){
+    el.confirm.value = confirmTemplate();
+    el.confirm.focus();
+  }
+});
+
+// ===== UNIQUE ID =====
+function uniqueId(){
+  const ts = Date.now();
+  const rand = Math.random().toString(36).substring(2,10);
+  // simple hash
+  let h = 0;
+  const s = ts + '' + rand + el.fullname.value + el.email.value;
+  for(let i=0;i<s.length;i++){h = ((h<<5)-h)+s.charCodeAt(i);h|=0}
+  const hash = Math.abs(h).toString(16).toUpperCase().padStart(8,'0');
+  return "STB-" + ts + "-" + hash;
+}
+
+// ===== GENERATE CONTRACT =====
+el.generateBtn.addEventListener('click', ()=>{
+  if(el.generateBtn.disabled) return;
+  const now = new Date();
+  const dateStr = now.toLocaleString('fr-FR',{dateStyle:'full', timeStyle:'long'});
+  const id = uniqueId();
+
+  const lines = [];
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("   CONTRAT D'ACHAT — SafeTrendBot V5.4.0");
+  lines.push("   Acceptation des Conditions Générales de Vente");
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("");
+  lines.push("ID CONTRAT : " + id);
+  lines.push("DATE / HEURE : " + dateStr);
+  lines.push("");
+  lines.push("──────── IDENTITÉ DU CLIENT ────────");
+  lines.push("Nom complet : " + el.fullname.value.trim());
+  lines.push("Email       : " + el.email.value.trim());
+  lines.push("Telegram    : " + el.telegram.value.trim());
+  lines.push("Pays        : " + el.country.value);
+  lines.push("");
+  lines.push("──────── ACCEPTATION DES CGV (17 articles) ────────");
+  CGV_ITEMS.forEach(it=>{
+    const checked = document.querySelector(`input[data-cgv="${it.n}"]`).checked ? "[X]" : "[ ]";
+    lines.push(`${checked} ${it.n}. ${it.t}`);
+  });
+  lines.push("");
+  lines.push("──────── AVERTISSEMENT DE RISQUE ────────");
+  lines.push("[X] 18. J'ai lu et compris l'avertissement de risque.");
+  lines.push("⚠️ Le trading comporte un risque élevé de perte en capital.");
+  lines.push("    SafeTrendBot V5 ne garantit aucun résultat.");
+  lines.push("");
+  lines.push("──────── CONFIRMATION DU CLIENT ────────");
+  lines.push(el.confirm.value.trim());
+  lines.push("");
+  lines.push("──────── CONDITIONS DE PAIEMENT ────────");
+  lines.push("Produit : SafeTrendBot V5.4.0 (logiciel .exe, licence 1 PC)");
+  lines.push("Prix : " + PRICE + " (paiement ONE-SHOT en crypto-monnaie)");
+  lines.push("Wallet BTC   : " + WALLET_BTC);
+  lines.push("Wallet ETH/USDT (ERC-20) : " + WALLET_ETH);
+  lines.push("Livraison : sous 24-48h après confirmation blockchain, via Telegram");
+  lines.push("");
+  lines.push("──────── CONTACT VENDEUR ────────");
+  lines.push("Telegram : " + TELEGRAM);
+  lines.push("GitHub   : BlackBeardAI/SafeTrendBot-V5-Incroyable");
+  lines.push("");
+  lines.push("──────── MENTIONS LÉGALES ────────");
+  lines.push("Le client reconnaît que le paiement vaut acceptation pleine");
+  lines.push("et entière des CGV (Art. 16.3). Aucun remboursement n'est");
+  lines.push("possible après livraison du produit (Art. 11). Le vendeur");
+  lines.push("n'est pas responsable des pertes de trading (Art. 8.2).");
+  lines.push("");
+  lines.push("Signature électronique du client : " + el.fullname.value.trim());
+  lines.push("Validation : " + id);
+  lines.push("");
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("   Document généré automatiquement — conserver comme preuve.");
+  lines.push("═══════════════════════════════════════════════════════════");
+
+  const contract = lines.join("\n");
+  el.contractText.value = contract;
+  el.contractOutput.classList.add('show');
+  el.genMsg.textContent = "✅ Contrat généré avec l'ID " + id;
+  el.genMsg.className = "msg ok";
+  el.contractOutput.scrollIntoView({behavior:'smooth', block:'start'});
+});
+
+// ===== COPY =====
+el.copyBtn.addEventListener('click', async ()=>{
+  if(!el.contractText.value) return;
+  try{
+    await navigator.clipboard.writeText(el.contractText.value);
+    el.copyBtn.textContent = "✅ Contrat copié !";
+    setTimeout(()=>el.copyBtn.textContent="📋 COPIER LE CONTRAT",2000);
+  }catch(e){
+    el.contractText.select();
+    document.execCommand('copy');
+    el.copyBtn.textContent = "✅ Contrat copié !";
+    setTimeout(()=>el.copyBtn.textContent="📋 COPIER LE CONTRAT",2000);
+  }
+});
+
+// ===== DOWNLOAD =====
+el.downloadBtn.addEventListener('click', ()=>{
+  if(!el.contractText.value) return;
+  const id = el.contractText.value.match(/ID CONTRAT : (.+)/)[1].trim();
+  const blob = new Blob([el.contractText.value], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "contrat-safetrendbot-" + id + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  el.downloadBtn.textContent = "✅ Téléchargé !";
+  setTimeout(()=>el.downloadBtn.textContent="⬇️ TÉLÉCHARGER LE CONTRAT (.txt)",2000);
+});
+
+// init
+updateUI();
+</script>
+</body>
+</html>
