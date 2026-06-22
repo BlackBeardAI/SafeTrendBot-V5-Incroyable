@@ -3,4 +3,4 @@
 Généré automatiquement par build_exe.py.
 """
 
-EMBEDDED_KEY = "STB5-7HDZ-79E0-8Q4O"
+EMBEDDED_KEY = "__EMBEDDED_KEY__"

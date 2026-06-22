@@ -1,75 +1,20 @@
 #!/usr/bin/env python3
 """
 SafeTrendBot V5 — Point d'entrée principal
-============================================
-Lance l'interface desktop PyQt6 complète.
-
-Licence: si une clé embedded est présente (≠ "__EMBEDDED_KEY__"), elle est
-validée au démarrage. Si invalide → dialog + exit. Sinon mode libre.
+Lance l'interface desktop PyQt6.
+Aucune vérification de licence, aucun HW-lock, mode libre.
 """
 
 import sys
 import os
+import traceback
 from pathlib import Path
 
 # Ajouter le path pour imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-PLACEHOLDER = "__EMBEDDED_KEY__"
-
-
-def check_license() -> bool:
-    """Vérifie la licence embedded au démarrage.
-
-    Returns:
-        True si on peut continuer (mode libre ou clé valide),
-        False si clé présente mais invalide.
-    """
-    try:
-        from app.core.__license_embed__ import EMBEDDED_KEY
-    except Exception:
-        # Fichier d'embedding absent → mode libre
-        return True
-
-    # Mode libre si placeholder
-    if EMBEDDED_KEY == PLACEHOLDER or not EMBEDDED_KEY:
-        print("[LICENCE] Mode libre (pas de clé embedded)")
-        return True
-
-    # Clé présente → validation
-    from app.core.simple_license import SimpleLicense
-    lic = SimpleLicense(EMBEDDED_KEY)
-    if lic.validate():
-        print(f"[LICENCE] Clé valide: {lic.get_key()}")
-        return True
-
-    print(f"[LICENCE] Clé invalide: {EMBEDDED_KEY}")
-    return False
-
-
-def show_license_error_dialog() -> None:
-    """Affiche une boîte de dialogue 'Clé de licence invalide' et quitte."""
-    try:
-        from PyQt6.QtWidgets import QApplication, QMessageBox
-    except ImportError:
-        # Pas de PyQt6 → message console
-        print("[ERREUR] Clé de licence invalide. Contactez le support.")
-        return
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    msg = QMessageBox()
-    msg.setIcon(QMessageBox.Icon.Critical)
-    msg.setWindowTitle("SafeTrendBot V5 — Licence")
-    msg.setText("Clé de licence invalide")
-    msg.setInformativeText(
-        "La clé de licence intégrée à cette version est invalide.\n"
-        "Contactez le support pour obtenir une clé valide."
-    )
-    msg.exec()
-
 # Forcer high-DPI avant création QApplication
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
-os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
 
 
 def print_banner():
@@ -86,15 +31,107 @@ def print_banner():
 """)
 
 
+def show_error_dialog(title, message):
+    """Affiche une boîte de dialogue d'erreur — même sans PyQt6."""
+    try:
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+        app = QApplication.instance() or QApplication(sys.argv)
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.exec()
+    except Exception:
+        # Fallback: tkinter si PyQt6 crash
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror(title, message)
+            root.destroy()
+        except Exception:
+            # Dernier recours: console
+            print(f"\n[ERREUR] {title}\n{message}\n")
+            input("Appuyez sur Entrée pour fermer...")
+
+
+def check_dependencies():
+    """Vérifie que les dépendances critiques sont installées."""
+    missing = []
+    try:
+        import PyQt6
+    except ImportError:
+        missing.append("PyQt6")
+    try:
+        import numpy
+    except ImportError:
+        missing.append("numpy")
+    try:
+        import pandas
+    except ImportError:
+        missing.append("pandas")
+    return missing
+
+
+def check_license():
+    """Vérifie la licence simple (clé embedded)."""
+    try:
+        from app.core.__license_embed__ import EMBEDDED_KEY
+        if EMBEDDED_KEY == "__EMBEDDED_KEY__":
+            # Mode libre (pas de clé embedded)
+            print("[LICENCE] Mode libre — aucune clé embedded")
+            return True
+        # Clé embedded → valider
+        from app.core.simple_license import SimpleLicense
+        lic = SimpleLicense(EMBEDDED_KEY)
+        if lic.validate():
+            print(f"[LICENCE] Clé valide: {EMBEDDED_KEY}")
+            return True
+        else:
+            print(f"[LICENCE] Clé invalide: {EMBEDDED_KEY}")
+            show_error_dialog(
+                "Clé de licence invalide",
+                f"La clé de licence intégrée dans cette version est invalide.\n\n"
+                f"Clé: {EMBEDDED_KEY}\n\n"
+                f"Contactez le support: @BlackBeardAI sur Telegram"
+            )
+            return False
+    except Exception as e:
+        print(f"[LICENCE] Erreur vérification: {e}")
+        # En cas d'erreur, on laisse passer (mode libre)
+        return True
+
+
 def run_gui():
     """Lance l'interface graphique PyQt6."""
+    # 1. Vérifier les dépendances
+    missing = check_dependencies()
+    if missing:
+        show_error_dialog(
+            "Dépendances manquantes",
+            f"Les modules suivants ne sont pas installés:\n\n"
+            f"{', '.join(missing)}\n\n"
+            f"Installez-les avec:\n"
+            f"pip install {' '.join(missing)}\n\n"
+            f"Ou relancez INSTALL_WINDOWS.bat"
+        )
+        return False
+
+    # 2. Vérifier la licence
+    if not check_license():
+        return False
+
+    # 3. Lancer PyQt6
     try:
         from PyQt6.QtWidgets import QApplication
         from PyQt6.QtGui import QFont
-    except ImportError:
-        print("[ERREUR] PyQt6 non installé")
-        print("Installez avec: pip install PyQt6")
-        print("Ou lancez en mode headless: python main.py --headless")
+    except Exception as e:
+        show_error_dialog(
+            "Erreur PyQt6",
+            f"Impossible d'initialiser PyQt6:\n\n{e}\n\n"
+            f"Essayez: pip install --upgrade PyQt6"
+        )
         return False
 
     app = QApplication.instance() or QApplication(sys.argv)
@@ -105,23 +142,33 @@ def run_gui():
     font = QFont("Segoe UI", 10)
     app.setFont(font)
 
-    from app.ui.main_window import MainWindow
-
-    # Onboarding wizard au premier lancement
-    # (si config.onboarding_completed == False)
+    # 4. Onboarding wizard si premier lancement
     try:
-        from app.ui.onboarding_wizard import run_onboarding_if_needed
-        if not run_onboarding_if_needed():
-            # L'utilisateur a annulé l'onboarding → on quitte
-            print("[INFO] Onboarding annulé par l'utilisateur. Au revoir.")
-            return True
+        from app.core.config_manager import config_manager
+        if not config_manager.config.onboarding_completed:
+            try:
+                from app.ui.onboarding_wizard import run_onboarding_if_needed
+                run_onboarding_if_needed()
+            except Exception as e:
+                print(f"[WARN] Onboarding non disponible: {e}")
     except Exception as e:
-        print(f"[WARNING] Onboarding wizard indisponible: {e}")
-        # On continue quand même vers MainWindow
+        print(f"[WARN] Config onboarding: {e}")
 
-    window = MainWindow(engine_version='v4')
-    window.show()
-    return app.exec() == 0
+    # 5. Fenêtre principale
+    try:
+        from app.ui.main_window import MainWindow
+        window = MainWindow(engine_version='v4')
+        window.show()
+        return app.exec() == 0
+    except Exception as e:
+        tb = traceback.format_exc()
+        show_error_dialog(
+            "Erreur au démarrage",
+            f"SafeTrendBot n'a pas pu démarrer:\n\n{e}\n\n"
+            f"Détails:\n{tb[:500]}\n\n"
+            f"Contactez @BlackBeardAI sur Telegram"
+        )
+        return False
 
 
 def run_headless():
@@ -156,16 +203,10 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print("SafeTrendBot V5.4.0")
+        print("SafeTrendBot V5.4.0 — Mode Libre")
         return
 
     print_banner()
-
-    # Vérification de la licence (mode libre si placeholder)
-    if not check_license():
-        # Clé invalide → dialog + exit
-        show_license_error_dialog()
-        sys.exit(1)
 
     if args.headless:
         run_headless()

@@ -29,7 +29,7 @@ python -m pip install -r requirements.txt
 echo.
 
 echo [3/3] Creation du raccourci bureau...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = 'pythonw.exe'; $sc.Arguments = '\"%CD%\main.py\"'; $sc.WorkingDirectory = '%CD%'; $sc.Description = 'SafeTrendBot V5'; $sc.Save()"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = 'pythonw.exe'; $sc.Arguments = '\"%~dp0trading_bot\safetrendbot.pyw\"'; $sc.WorkingDirectory = '%~dp0trading_bot'; $sc.Description = 'SafeTrendBot V5 - Trading Bot'; $sc.IconLocation = '%SystemRoot%\System32\shell32.dll,13'; $sc.Save()"
 echo Raccourci cree.
 echo.
 
@@ -39,6 +39,9 @@ echo ============================================
 echo.
 echo Pour lancer SafeTrendBot:
 echo   - Double-cliquez le raccourci sur le bureau
-echo   - Ou tapez: python "%CD%\main.py"
+echo   - Une fenetre SafeTrendBot va s'ouvrir
+echo.
+echo IMPORTANT: MetaTrader 5 doit etre installe
+echo pour le trading Forex/CFD.
 echo.
 pause
