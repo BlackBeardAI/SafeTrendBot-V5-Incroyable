@@ -1,5 +1,6 @@
 @echo off
 title SafeTrendBot V5 - Installation
+setlocal enabledelayedexpansion
 
 echo.
 echo  ============================================================
@@ -8,62 +9,110 @@ echo  |              Installation automatique                      |
 echo  ============================================================
 echo.
 
-:: 1. Verifier Python
+rem --- Etape 1: Verifier Python ---
+echo  [1/4] Verification de Python...
 where python >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    echo  [ERREUR] Python n'est pas installe!
+if !ERRORLEVEL! neq 0 (
     echo.
-    echo  Telechargez Python 3.11+ depuis: https://python.org/downloads
-    echo  IMPORTANT: Cochez "Add Python to PATH" pendant l'installation
+    echo  [ERREUR] Python n'est pas installe ou n'est pas dans le PATH
     echo.
-    pause
-    exit /b 1
-)
-
-:: 2. Verifier la version Python
-python -c "import sys; exit(0 if sys.version_info>=(3,11) else 1)" 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo  [ERREUR] Python 3.11+ requis!
-    echo  Votre version:
-    python --version
+    echo  Solution:
+    echo    1. Telechargez Python 3.11+ sur https://python.org/downloads
+    echo    2. Pendant l'installation, COCHEZ "Add Python to PATH"
+    echo    3. Relancez ce script
     echo.
     pause
     exit /b 1
 )
 
-echo  [1/4] Python detecte:
+python --version 2>nul
+if !ERRORLEVEL! neq 0 (
+    echo.
+    echo  [ERREUR] Python detecte mais ne se lance pas correctement
+    echo  Essayez de reinstaller Python 3.11+
+    echo.
+    pause
+    exit /b 1
+)
+
+echo  Python OK:
 python --version
 echo.
 
-:: 3. Installer les dependances
-echo  [2/4] Installation des dependances...
-cd /d "%~dp0trading_bot"
-python -m pip install --upgrade pip >nul 2>&1
-python -m pip install -r requirements.txt
-if %ERRORLEVEL% neq 0 (
+rem --- Verifier version Python ---
+python -c "import sys; exit(0 if sys.version_info>=(3,11) else 1)" 2>nul
+if !ERRORLEVEL! neq 0 (
+    echo  [ERREUR] Python 3.11+ requis. Votre version:
+    python --version
     echo.
-    echo  [ERREUR] Echec installation dependances
-    echo  Essayez manuellement: pip install -r requirements.txt
+    echo  Mettez a jour Python depuis https://python.org/downloads
+    echo.
     pause
     exit /b 1
 )
+echo  Version Python OK
 echo.
 
-:: 4. Creer le raccourci bureau
-echo  [3/4] Creation du raccourci bureau...
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = '%~dp0trading_bot\main.py'; $sc.IconLocation = '%SystemRoot%\System32\shell32.dll,13'; $sc.WorkingDirectory = '%~dp0trading_bot'; $sc.Description = 'SafeTrendBot V5 - Trading Bot'; $sc.Save()" 2>nul
-echo  [OK] Raccourci cree sur le bureau
+rem --- Etape 2: Aller dans le dossier trading_bot ---
+echo  [2/4] Installation des dependances...
+echo  Dossier courant: %~dp0
+echo  Destination: %~dp0trading_bot
 echo.
 
-:: 5. Test
-echo  [4/4] Verification...
-python -c "import PyQt6; import MetaTrader5; import pandas; import numpy; print('  Toutes les dependances sont OK')" 2>nul
-if %ERRORLEVEL% neq 0 (
-    echo  [WARN] Certaines dependances optionnelles manquent
-    echo  Le bot peut quand meme fonctionner en mode papier
-) else (
-    echo  [OK] Tout est pret!
+cd /d "%~dp0trading_bot"
+if !ERRORLEVEL! neq 0 (
+    echo  [ERREUR] Impossible d'acceder au dossier trading_bot
+    echo  Verifiez que le dossier existe a cote de ce .bat
+    echo  Dossier attendu: %~dp0trading_bot
+    echo.
+    pause
+    exit /b 1
 )
+
+if not exist "requirements.txt" (
+    echo  [ERREUR] requirements.txt non trouve dans:
+    echo  %CD%
+    echo.
+    echo  Verifiez que vous avez extrait tout le dossier du zip GitHub
+    echo.
+    pause
+    exit /b 1
+)
+
+echo  Installation de pip (mise a jour)...
+python -m pip install --upgrade pip
+echo.
+
+echo  Installation des dependances (cela peut prendre quelques minutes)...
+python -m pip install -r requirements.txt
+if !ERRORLEVEL! neq 0 (
+    echo.
+    echo  [ATTENTION] Certaines dependances n'ont pas pu etre installees
+    echo  Essayez manuellement: pip install PyQt6 numpy pandas MetaTrader5
+    echo.
+    echo  Le bot peut fonctionner avec les dependances de base
+    echo.
+    pause
+)
+echo.
+
+rem --- Etape 3: Raccourci bureau ---
+echo  [3/4] Creation du raccourci bureau...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%USERPROFILE%\Desktop\SafeTrendBot V5.lnk'); $sc.TargetPath = 'pythonw.exe'; $sc.Arguments = '"%~dp0trading_bot\main.py"'; $sc.WorkingDirectory = '%~dp0trading_bot'; $sc.Description = 'SafeTrendBot V5 - Trading Bot'; $sc.Save()"
+if !ERRORLEVEL! neq 0 (
+    echo  [ATTENTION] Le raccourci n'a pas pu etre cree automatiquement
+    echo  Vous pouvez lancer le bot avec: python %~dp0trading_bot\main.py
+) else (
+    echo  [OK] Raccourci cree sur le bureau
+)
+echo.
+
+rem --- Etape 4: Verification ---
+echo  [4/4] Verification des modules...
+python -c "import PyQt6; print('  PyQt6: OK')" 2>nul || echo  PyQt6: MANQUANT
+python -c "import numpy; print('  numpy: OK')" 2>nul || echo  numpy: MANQUANT
+python -c "import pandas; print('  pandas: OK')" 2>nul || echo  pandas: MANQUANT
+python -c "import MetaTrader5; print('  MetaTrader5: OK')" 2>nul || echo  MetaTrader5: MANQUANT (optionnel)
 echo.
 
 echo  ============================================================
@@ -71,10 +120,12 @@ echo  |                  INSTALLATION TERMINEE!                   |
 echo  |                                                            |
 echo  |  Pour lancer SafeTrendBot:                                 |
 echo  |    - Double-cliquez le raccourci sur le bureau             |
-echo  |    - Ou: python trading_bot\main.py                        |
+echo  |    - Ou ouvrez un terminal et tapez:                       |
+echo  |      python "%~dp0trading_bot\main.py"                     |
 echo  |                                                            |
-echo  |  Pour creer un installeur .msi:                            |
-echo  |    python build_msi.py                                     |
+echo  |  En cas de probleme, lancez le bot en ligne de commande    |
+echo  |  pour voir les messages d'erreur.                          |
 echo  ============================================================
 echo.
-pause
+echo  Appuyez sur une touche pour fermer...
+pause >nul
