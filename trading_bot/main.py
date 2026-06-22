@@ -132,7 +132,7 @@ def run_headless():
     print("[INFO] Ctrl+C pour arrêter\n")
 
     try:
-        from app.core.trading_engine import TradingEngine
+        from app.core.trading_engine_v4 import TradingEngineV4 as TradingEngine
         engine = TradingEngine()
         engine.start()
         import time

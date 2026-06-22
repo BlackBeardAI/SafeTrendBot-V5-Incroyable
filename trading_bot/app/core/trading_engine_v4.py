@@ -13,6 +13,9 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 import numpy as np
 
+# Types partagés (source de vérité : app.core.bot_types)
+from app.core.bot_types import BotState, BotStatus
+
 # Imports V3 (existant)
 from app.core.config_manager import config_manager, SymbolConfig
 from app.core.strategies import MarketData, Signal
@@ -51,38 +54,7 @@ from bot.telegram_alerts import AlertSystem, AlertLevel
 TELEGRAM_AVAILABLE = True
 
 
-class BotState(Enum):
-    STOPPED = "stopped"
-    STARTING = "starting"
-    RUNNING = "running"
-    PAUSED = "paused"
-    HALTED = "halted"
-    ERROR = "error"
-
-
-@dataclass
-class BotStatus:
-    state: BotState
-    mode: str
-    broker: str
-    connected: bool
-    last_tick_time: Optional[datetime]
-    last_signal_time: Optional[datetime]
-    active_symbols: list
-    open_positions: int
-    managed_positions: dict
-    today_trades: int
-    today_pnl: float
-    consecutive_losses: int
-    circuit_breaker_level: str
-    # V4 additions
-    current_regime: str = "unknown"
-    regime_confidence: float = 0.0
-    portfolio_risk_multiplier: float = 1.0
-    kelly_fraction: float = 0.0
-    sharpe: float = 0.0
-    max_drawdown: float = 0.0
-    message: str = ""
+# BotState et BotStatus sont importés depuis app.core.bot_types (voir plus haut).
 
 
 @dataclass

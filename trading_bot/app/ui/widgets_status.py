@@ -351,7 +351,7 @@ class TradingStatusPanel(QFrame):
         # 1. Bot démarré
         bot_running = False
         if self.engine and hasattr(self.engine, 'state'):
-            from app.core.trading_engine_v3 import BotState
+            from app.core.bot_types import BotState
             bot_running = self.engine.state == BotState.RUNNING
         self._set_condition('bot_running', bot_running,
                             'Cliquez sur Démarrer dans le Dashboard')

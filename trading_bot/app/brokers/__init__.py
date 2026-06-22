@@ -5,7 +5,6 @@ Contient :
 - broker_adapter.py : Interface abstraite commune
 - mt5_adapter.py : MetaTrader 5 (supporté)
 - xtb_adapter.py : XTB xStation (expérimental)
-- ib_adapter.py : Interactive Brokers (expérimental)
 - factory.py : Crée le bon adapter selon la config
 """
 

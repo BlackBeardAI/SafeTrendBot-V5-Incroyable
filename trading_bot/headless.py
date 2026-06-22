@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.core.trading_engine import TradingEngine
+from app.core.trading_engine_v4 import TradingEngineV4 as TradingEngine
 
 # Configuration logging
 LOG_DIR = Path.home() / ".safetrendbot"

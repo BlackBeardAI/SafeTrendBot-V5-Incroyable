@@ -22,9 +22,10 @@ from enum import IntEnum
 # Ajouter parent au path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.trading_engine import (
-    BrokerAdapter, TradeDirection, Position, TradeResult
+from app.core.bot_types import (
+    TradeDirection, Position, TradeResult
 )
+from app.brokers.broker_adapter import BrokerAdapter
 
 logger = logging.getLogger("cTrader")
 

@@ -111,6 +111,19 @@ python main.py --headless
 17. **Logs** — Logs en temps réel
 18. **Settings** — Paramètres de l'application
 
+## 💰 Tarif
+
+**Prix unique: 5000€** (payable en crypto au cours du BTC)
+
+- Paiement one-shot en BTC/ETH/USDT
+- Pas d'abonnement, pas de frais récurrents
+- Mises à jour gratuites à vie
+- Support par Telegram
+
+Wallets:
+- **BTC**: `bc1qxxzn05t7jvdmz47ncnxlglczhh9aet3gcpt5dx`
+- **ETH/USDT**: `0xd1c2ef7f724635fa0ed327f4d626620a2adffd82`
+
 ## 📜 License
 
 Projet commercial — © 2026 BlackBeardAI

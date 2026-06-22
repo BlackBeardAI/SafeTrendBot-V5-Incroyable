@@ -13,7 +13,7 @@ from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSlot
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeySequence, QShortcut
 
 from app.core.config_manager import config_manager
-from app.core.trading_engine_v3 import TradingEngineV3, BotState, BotStatus
+from app.core.bot_types import BotState, BotStatus
 from app.core.trading_engine_v4 import TradingEngineV4
 from app.core.system_tray_manager import SystemTrayManager
 from app.ui.views.dashboard_view import DashboardView
@@ -94,7 +94,7 @@ class MainWindow(QMainWindow):
         if engine_version == 'v4':
             self.engine = TradingEngineV4()
         else:
-            self.engine = TradingEngineV3()
+            self.engine = TradingEngineV4()
         
         self.engine.status_changed.connect(self._on_status_changed)
         self.engine.log_message.connect(self._on_log_message)

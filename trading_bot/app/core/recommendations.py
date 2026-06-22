@@ -110,7 +110,7 @@ class RecommendationEngine:
         if engine is None:
             return recs
 
-        from app.core.trading_engine_v3 import BotState
+        from app.core.bot_types import BotState
 
         if engine.state == BotState.STOPPED:
             recs.append(Recommendation(

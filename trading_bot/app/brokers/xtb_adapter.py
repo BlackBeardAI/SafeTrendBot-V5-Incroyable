@@ -25,7 +25,7 @@ from app.brokers.broker_adapter import (
     AccountInfo, SymbolInfo, Tick, Candle, Position, OrderType, OrderResult,
     BrokerNotInstalledError, get_broker_capabilities,
 )
-from app.core.trading_engine import TradeDirection, TradeResult
+from app.core.bot_types import TradeDirection, TradeResult
 
 logger = logging.getLogger("XTB")
 

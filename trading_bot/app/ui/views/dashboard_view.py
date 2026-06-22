@@ -8,7 +8,7 @@ from PyQt6.QtGui import QFont
 
 from app.ui.widgets import KPICard, Card, PageHeader
 from app.ui.theme import COLORS
-from app.core.trading_engine_v3 import BotState
+from app.core.bot_types import BotState
 
 
 class DashboardView(QWidget):
