@@ -118,7 +118,9 @@ class TradingEngineV4(QObject):
         super().__init__()
         self.config = config_manager.config
         self.state = BotState.STOPPED
-        self.mode = "live"
+        # Respect du mode par défaut défini dans la config (paper par défaut).
+        # Évite le trading live involontaire — sécurité.
+        self.mode = self.config.default_mode if self.config.default_mode in ("live", "paper") else "paper"
         self._stop_event = Event()
         self._pause_event = Event()
         self._thread: Optional[Thread] = None

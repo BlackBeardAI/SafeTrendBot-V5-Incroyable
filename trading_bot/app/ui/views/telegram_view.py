@@ -204,7 +204,7 @@ class TelegramView(QWidget):
         self.alert_daily_report.setChecked(cfg.alert_daily_report)
         self.alert_connection.setChecked(True)  # Toujours actif par défaut
         self.drawdown_threshold.setValue(int(cfg.alert_drawdown_threshold))
-        self.daily_report_hour.setValue(cfg.daily_report_hour)
+        self.daily_report_hour.setValue(int(cfg.daily_report_hour))
 
     def _save(self):
         cfg = config_manager.config.telegram

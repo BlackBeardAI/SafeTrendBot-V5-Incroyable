@@ -91,7 +91,7 @@ class SliderSpinRow(QWidget):
     def set_value(self, v: float):
         self.spin.blockSignals(True)
         self.slider.blockSignals(True)
-        self.spin.setValue(v)
+        self.spin.setValue(int(v))
         self.slider.setValue(int(v * self._scale))
         self.spin.blockSignals(False)
         self.slider.blockSignals(False)

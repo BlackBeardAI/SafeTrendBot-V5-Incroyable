@@ -15,13 +15,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from enum import Enum
 import struct
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.trading_engine import (
-    BrokerAdapter, TradeDirection, Position, TradeResult
+from app.brokers.broker_adapter import (
+    BrokerAdapter, BrokerType, BrokerCapabilities, BrokerSupportLevel,
+    AccountInfo, SymbolInfo, Tick, Candle, Position, OrderType, OrderResult,
+    BrokerNotInstalledError, get_broker_capabilities,
 )
+from app.core.trading_engine import TradeDirection, TradeResult
 
 logger = logging.getLogger("XTB")
 
@@ -30,7 +34,7 @@ logger = logging.getLogger("XTB")
 # XTB PROTOCOL
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class XTBCommand(IntEnum):
+class XTBCommand(Enum):
     """Commandes API XTB."""
     LOGIN = "login"
     LOGOUT = "logout"

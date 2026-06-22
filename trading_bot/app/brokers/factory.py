@@ -6,7 +6,7 @@ SafeTrendBot Broker Factory — Fabrique d'adapters broker
 import logging
 from typing import Optional, Dict, Type
 
-from app.core.trading_engine import BrokerAdapter, BrokerType
+from app.brokers.broker_adapter import BrokerAdapter, BrokerType
 
 logger = logging.getLogger("BrokerFactory")
 
@@ -179,8 +179,30 @@ def create_broker(broker_name: str = "auto", config: dict = None) -> Optional[Br
 
 
 def list_brokers() -> list:
-    """Liste les brokers disponibles."""
+    """Retourne la liste des brokers disponibles."""
     return BrokerFactory.list_available()
+
+
+# Alias pour compatibilité
+list_available_brokers = list_brokers
+
+
+def create_broker_adapter(broker_type, config: dict = None):
+    """
+    Crée un adapter broker à partir d'un BrokerType (ou nom str).
+    Alias compatible avec l'API attendue par trading_engine_v3/v4.
+
+    Args:
+        broker_type: BrokerType enum ou nom de broker (str)
+        config: Configuration optionnelle (dict)
+
+    Returns:
+        BrokerAdapter ou None si non disponible
+    """
+    # Si c'est une string, convertir en BrokerType
+    if isinstance(broker_type, str):
+        return BrokerFactory.create_by_name(broker_type, config)
+    return BrokerFactory.create(broker_type, config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

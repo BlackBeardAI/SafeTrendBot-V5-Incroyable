@@ -6,10 +6,11 @@ Interface desktop complète avec sidebar et 6 vues.
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QLabel, QStackedWidget, QFrame, QSystemTrayIcon, QMenu,
-    QStatusBar, QMessageBox, QApplication
+    QStatusBar, QMessageBox, QApplication, QDialog, QDialogButtonBox,
+    QTextEdit
 )
 from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSlot
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QKeySequence, QShortcut
 
 from app.core.config_manager import config_manager
 from app.core.trading_engine_v3 import TradingEngineV3, BotState, BotStatus
@@ -104,6 +105,9 @@ class MainWindow(QMainWindow):
         self._build_system_tray()
         self._build_status_bar()
 
+        # Raccourcis clavier
+        self._setup_shortcuts()
+
         # Timer de rafraîchissement global
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_views)
@@ -112,6 +116,104 @@ class MainWindow(QMainWindow):
         # Démarrage auto si configuré
         if config_manager.config.ui.auto_start_bot:
             QTimer.singleShot(1000, self.start_bot)
+
+    # ========================================================================
+    # RACCOURCIS CLAVIER
+    # ========================================================================
+
+    def _setup_shortcuts(self):
+        """Configure les raccourcis clavier globaux de la fenêtre."""
+        # Ctrl+S : Démarrer le bot
+        sc_start = QShortcut(QKeySequence("Ctrl+S"), self)
+        sc_start.activated.connect(self.start_bot)
+        sc_start.setWhatsThis("Démarrer le bot")
+
+        # Ctrl+X : Arrêter le bot
+        sc_stop = QShortcut(QKeySequence("Ctrl+X"), self)
+        sc_stop.activated.connect(self.stop_bot)
+        sc_stop.setWhatsThis("Arrêter le bot")
+
+        # Ctrl+P : Pause / Resume (toggle)
+        sc_pause = QShortcut(QKeySequence("Ctrl+P"), self)
+        sc_pause.activated.connect(self._toggle_pause)
+        sc_pause.setWhatsThis("Pause/Resume le bot")
+
+        # Ctrl+B : Ouvrir vue backtest
+        sc_backtest = QShortcut(QKeySequence("Ctrl+B"), self)
+        sc_backtest.activated.connect(lambda: self._switch_view(7))
+        sc_backtest.setWhatsThis("Ouvrir la vue Backtest")
+
+        # Ctrl+D : Ouvrir vue dashboard
+        sc_dashboard = QShortcut(QKeySequence("Ctrl+D"), self)
+        sc_dashboard.activated.connect(lambda: self._switch_view(0))
+        sc_dashboard.setWhatsThis("Ouvrir la vue Tableau de bord")
+
+        # F1 : Aide
+        sc_help = QShortcut(QKeySequence("F1"), self)
+        sc_help.activated.connect(self._show_help)
+        sc_help.setWhatsThis("Afficher l'aide")
+
+    def _toggle_pause(self):
+        """Bascule entre pause et resume selon l'état courant du bot."""
+        if not hasattr(self, 'engine') or self.engine is None:
+            return
+        state = getattr(self.engine, 'state', None)
+        if state == BotState.RUNNING:
+            self.engine.pause()
+            self.statusBar().showMessage("Bot mis en pause (Ctrl+P pour reprendre)", 3000)
+        elif state == BotState.PAUSED:
+            self.engine.resume()
+            self.statusBar().showMessage("Bot repris (Ctrl+P pour pause)", 3000)
+        else:
+            self.statusBar().showMessage(
+                f"Le bot doit être actif pour basculer pause/resume (état: {state})", 3000
+            )
+
+    def _show_help(self):
+        """Affiche la fenêtre d'aide avec la liste des raccourcis."""
+        help_dialog = QDialog(self)
+        help_dialog.setWindowTitle("SafeTrendBot V5 — Aide & Raccourcis")
+        help_dialog.setMinimumSize(520, 420)
+
+        layout = QVBoxLayout(help_dialog)
+
+        title = QLabel("⌨️  Raccourcis clavier")
+        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+
+        shortcuts_text = QTextEdit()
+        shortcuts_text.setReadOnly(True)
+        shortcuts_text.setHtml("""
+        <h3>Raccourcis clavier</h3>
+        <table cellpadding='6'>
+        <tr><td><b>Ctrl+S</b></td><td>Démarrer le bot</td></tr>
+        <tr><td><b>Ctrl+X</b></td><td>Arrêter le bot</td></tr>
+        <tr><td><b>Ctrl+P</b></td><td>Pause / Resume le bot</td></tr>
+        <tr><td><b>Ctrl+B</b></td><td>Ouvrir la vue Backtest</td></tr>
+        <tr><td><b>Ctrl+D</b></td><td>Ouvrir la vue Tableau de bord</td></tr>
+        <tr><td><b>F1</b></td><td>Afficher cette aide</td></tr>
+        </table>
+        <br>
+        <h3>Navigation</h3>
+        <p>Utilisez la sidebar à gauche pour naviguer entre les vues.</p>
+        <br>
+        <h3>Sécurité</h3>
+        <p>Par défaut, le bot démarre en mode <b>Paper Trading</b> (simulation).<br>
+        Pour passer en mode <b>Live</b>, configurez votre broker dans la vue Broker
+        puis changez le mode dans les Paramètres.</p>
+        <br>
+        <h3>Astuces</h3>
+        <p>• L'icône système permet de contrôler le bot sans ouvrir la fenêtre.<br>
+        • Les profils de trading permettent de basculer rapidement entre configurations.<br>
+        • Le backtest permet de tester votre stratégie sur données historiques.</p>
+        """)
+        layout.addWidget(shortcuts_text)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(help_dialog.accept)
+        layout.addWidget(buttons)
+
+        help_dialog.exec()
 
     # ========================================================================
     # CONSTRUCTION UI

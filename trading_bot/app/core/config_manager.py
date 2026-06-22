@@ -5,6 +5,7 @@ Stocke tous les paramètres dans un JSON, gère les profils, les sauvegardes.
 
 import json
 import os
+import glob
 from dataclasses import dataclass, asdict, field
 from typing import List, Optional
 from datetime import datetime
@@ -202,6 +203,11 @@ class AppConfig:
     security: PinConfig = field(default_factory=PinConfig)
     initial_capital: float = 10000.0
     broker_name: str = ""
+    # Mode par défaut: "paper" (paper_trading) ou "live".
+    # Paper par défaut pour sécurité — évite le trading réel involontaire.
+    default_mode: str = "paper"
+    # Onboarding wizard: False jusqu'à ce que l'utilisateur complète le wizard.
+    onboarding_completed: bool = False
 
 
 class ConfigManager:
@@ -243,13 +249,20 @@ class ConfigManager:
             print(f"Erreur chargement config, utilisation par défaut : {e}")
             return AppConfig()
 
-    def save(self, config: Optional[AppConfig] = None):
-        """Sauvegarde la configuration"""
+    def save(self, config: Optional[AppConfig] = None, backup: bool = False):
+        """Sauvegarde la configuration.
+
+        Args:
+            config: config à sauvegarder (self.config par défaut).
+            backup: si True, crée aussi un backup horodaté via auto_backup().
+        """
         if config is None:
             config = self.config
         try:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(asdict(config), f, indent=2, default=str)
+            if backup:
+                self.auto_backup(config)
         except IOError as e:
             print(f"Erreur sauvegarde config : {e}")
 
@@ -344,6 +357,8 @@ class ConfigManager:
             security=security,
             initial_capital=data.get('initial_capital', default.initial_capital),
             broker_name=data.get('broker_name', default.broker_name),
+            default_mode=data.get('default_mode', default.default_mode),
+            onboarding_completed=data.get('onboarding_completed', default.onboarding_completed),
         )
 
     def save_profile(self, name: str):
@@ -374,6 +389,46 @@ class ConfigManager:
         """Retourne le chemin d'un fichier de log"""
         date_str = datetime.now().strftime('%Y-%m-%d')
         return self.logs_dir / f'{name}_{date_str}.log'
+
+    # ========================================================================
+    # BACKUP AUTOMATIQUE
+    # ========================================================================
+
+    def auto_backup(self, config: Optional[AppConfig] = None, max_backups: int = 5) -> Optional[Path]:
+        """Sauvegarde une copie horodatée de la config dans un fichier
+        `config_backup_{timestamp}.json`. Conserve au maximum `max_backups`
+        fichiers (les plus anciens sont supprimés).
+
+        À appeler à chaque changement important (démarrage, arrêt, édition
+        de stratégie, sauvegarde profil, etc.).
+
+        Returns:
+            Chemin du backup créé, ou None si échec.
+        """
+        if config is None:
+            config = self.config
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = self.app_data_dir / f'config_backup_{timestamp}.json'
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                json.dump(asdict(config), f, indent=2, default=str)
+
+            # Nettoyage : ne garder que les `max_backups` plus récents
+            pattern = str(self.app_data_dir / 'config_backup_*.json')
+            backups = sorted(
+                glob.glob(pattern),
+                key=lambda p: os.path.getmtime(p),
+                reverse=True,
+            )
+            for old_path in backups[max_backups:]:
+                try:
+                    os.remove(old_path)
+                except OSError:
+                    pass
+            return backup_path
+        except (IOError, OSError) as e:
+            print(f"Erreur auto_backup config : {e}")
+            return None
 
 
 # Singleton accessible partout
