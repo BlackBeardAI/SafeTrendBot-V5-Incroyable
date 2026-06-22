@@ -19,7 +19,17 @@ Bot de trading automatisé multi-broker avec interface desktop PyQt6.
 
 ## 🚀 Installation
 
-### Windows (1 clic)
+### Windows — Version Portable (.exe) — RECOMMANDÉ
+
+Aucune installation Python requise. Le client reçoit un seul fichier:
+
+1. Téléchargez `SafeTrendBot.exe`
+2. Double-cliquez → le bot s'ouvre
+3. Suivez l'onboarding wizard (3 étapes)
+
+C'est tout. Aucune dépendance, aucune installation.
+
+### Windows — Installation depuis le code source
 
 1. Téléchargez le fichier `INSTALL_WINDOWS.bat`
 2. **Clic droit → Exécuter en tant qu'administrateur**
@@ -35,12 +45,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Créer un installateur .msi
+### Créer un .exe portable (développeur)
 
 ```bash
-# Prérequis: WiX Toolset 3.14 (https://wixtoolset.org/releases/)
-python build_msi.py
-# → dist/SafeTrendBot-Setup-5.4.0.msi
+cd trading_bot
+python build_exe.py --generate --build
+# → dist/SafeTrendBot.exe (standalone, ~80-120MB)
 ```
 
 ## 📁 Structure

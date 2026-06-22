@@ -1,7 +1,6 @@
 """Fichier d'embedding de clé de licence.
 
-Ce fichier est généré automatiquement et modifié par build_exe.py pour
-injecter une clé de licence dans le build. Ne pas éditer manuellement.
+Généré automatiquement par build_exe.py.
 """
 
-EMBEDDED_KEY = "__EMBEDDED_KEY__"
+EMBEDDED_KEY = "STB5-7HDZ-79E0-8Q4O"
