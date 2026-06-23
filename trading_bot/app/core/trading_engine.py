@@ -397,7 +397,7 @@ class TradingEngineLegacy:
                 with open(CONFIG_FILE) as f:
                     user = json.load(f)
                     default.update(user)
-            except:
+            except Exception:
                 pass
         
         return default

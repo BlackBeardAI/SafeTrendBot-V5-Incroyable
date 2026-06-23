@@ -286,7 +286,7 @@ class BinanceWebSocket:
     def _run(self):
         try:
             self.ws.run_forever(ping_interval=30)
-        except:
+        except Exception:
             pass
         finally:
             self.running = False

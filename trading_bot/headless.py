@@ -71,7 +71,7 @@ class SafeTrendBotServer:
                     if info:
                         logger.debug(f"Balance: {info.get('balance', 0):.2f} | "
                                    f"Equity: {info.get('equity', 0):.2f}")
-                except:
+                except Exception:
                     pass
         
         return True

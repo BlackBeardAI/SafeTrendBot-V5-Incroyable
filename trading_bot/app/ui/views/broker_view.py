@@ -290,7 +290,7 @@ class BrokerView(QWidget):
         self.mt5_server.setEnabled(not checked)
 
     def _update_install_status(self):
-        available = list_available_brokers()
+        available = {b: True for b in list_available_brokers()}
         type_map = {
             "mt5": BrokerType.MT5,
             "xtb": BrokerType.XTB,

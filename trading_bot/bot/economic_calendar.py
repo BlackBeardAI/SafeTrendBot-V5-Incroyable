@@ -17,6 +17,9 @@ from typing import List, Optional
 import json
 import os
 import re
+import logging
+
+logger = logging.getLogger("EconomicCalendar")
 
 
 @dataclass
@@ -61,7 +64,7 @@ class EconomicCalendar:
             self._save_cache(events)
             return events
         except requests.RequestException as e:
-            print(f"Erreur récupération calendrier : {e}")
+            logger.warning(f"Erreur récupération calendrier : {e}")
             # Fallback sur le cache même expiré
             if os.path.exists(self.cache_path):
                 return self._load_cache()
@@ -186,7 +189,7 @@ class EconomicCalendar:
             with open(self.cache_path, 'w', encoding='utf-8') as f:
                 json.dump([e.to_dict() for e in events], f, indent=2)
         except IOError as e:
-            print(f"Erreur cache : {e}")
+            logger.warning(f"Erreur cache : {e}")
 
     def _load_cache(self) -> List[EconomicEvent]:
         try:

@@ -341,7 +341,6 @@ def _apply_palette(app, palette: dict):
 
 def apply_dark_theme(app):
     """Applique le thème sombre"""
-    global COLORS
     COLORS.clear()
     COLORS.update(COLORS_DARK)
     _apply_palette(app, COLORS)
@@ -350,7 +349,6 @@ def apply_dark_theme(app):
 
 def apply_light_theme(app):
     """Applique le thème clair"""
-    global COLORS
     COLORS.clear()
     COLORS.update(COLORS_LIGHT)
     _apply_palette(app, COLORS)

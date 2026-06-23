@@ -9,6 +9,7 @@ Usage :
     articles = feed.fetch_all()
 """
 
+import logging
 import requests
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict
@@ -16,6 +17,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
 import re
+
+logger = logging.getLogger("NewsFeed")
 
 
 @dataclass
@@ -93,7 +96,7 @@ class NewsFeed:
                 category=source_info['category']
             )
         except requests.RequestException as e:
-            print(f"Erreur {name} : {e}")
+            logger.warning(f"Erreur {name} : {e}")
             return []
 
     def fetch_all(self, max_per_source: int = 10) -> List[NewsArticle]:
