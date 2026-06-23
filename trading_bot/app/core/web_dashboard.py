@@ -4,9 +4,12 @@ Accès depuis n'importe quel appareil, pas besoin de PyQt.
 """
 import asyncio
 import json
+import logging
 from datetime import datetime
 from typing import Dict, Optional, Set
 from dataclasses import asdict
+
+logger = logging.getLogger("WebDashboard")
 
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -163,24 +166,40 @@ class WebDashboard:
             'win_rate': getattr(status, 'win_rate', 0),
         }
 
-    def _broadcast_status(self, status):
-        data = self._get_status_dict()
-        asyncio.create_task(self._send_to_all(data))
-
     def _broadcast_log(self, level, message):
         data = {'type': 'log', 'level': level, 'message': message,
                 'time': datetime.now().isoformat()}
-        asyncio.create_task(self._send_to_all(data))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._send_to_all(data))
+        except RuntimeError:
+            pass
 
     def _broadcast_regime(self, regime, confidence, reasons):
         data = {'type': 'regime', 'regime': regime, 'confidence': confidence,
                 'reason': reasons[0] if reasons else ''}
-        asyncio.create_task(self._send_to_all(data))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._send_to_all(data))
+        except RuntimeError:
+            pass
 
     def _broadcast_perf(self, perf):
         data = {'type': 'performance', 'win_rate': perf.win_rate, 'sharpe': perf.sharpe,
                 'profit_factor': perf.profit_factor, 'expectancy': perf.expectancy}
-        asyncio.create_task(self._send_to_all(data))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._send_to_all(data))
+        except RuntimeError:
+            pass
+
+    def _broadcast_status(self, status):
+        data = self._get_status_dict()
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._send_to_all(data))
+        except RuntimeError:
+            pass
 
     async def _send_to_all(self, data):
         disconnected = set()
@@ -199,8 +218,9 @@ class WebDashboard:
         # Lancer dans un thread séparé
         import threading
         def run_server():
-            uvicorn.run(self.app, host=self.host, port=self.port, log_level="warning")
+            if self.app is not None:
+                uvicorn.run(self.app, host=self.host, port=self.port, log_level="warning")
         self._thread = threading.Thread(target=run_server, daemon=True)
         self._thread.start()
-        print(f"[WEB] Dashboard lancé sur http://{self.host}:{self.port}")
+        logger.info(f"[WEB] Dashboard lancé sur http://{self.host}:{self.port}")
         return True
