@@ -42,10 +42,10 @@ class MultiAccountManager:
                     with self._lock:
                         self.accounts[config.name] = broker
                         self.configs[config.name] = config
-                    print(f"[MULTI] Compte '{config.name}' connecté")
+                    logger.info(f"[MULTI] Compte '{config.name}' connecté")
                     return True
         except Exception as e:
-            print(f"[MULTI] Échec connexion {config.name}: {e}")
+            logger.info(f"[MULTI] Échec connexion {config.name}: {e}")
         return False
 
     def execute_on_all(self, symbol: str, direction: int, volume: float,

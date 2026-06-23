@@ -54,11 +54,11 @@ class BrokerFailover:
                         self._consecutive_failures[cfg.name] = 0
                         if self.active_broker is None:
                             self.active_broker = cfg.name
-                            print(f"[FAILOVER] Principal actif : {cfg.name}")
+                            logger.warning(f"[FAILOVER] Principal actif : {cfg.name}")
                     else:
                         self.health[cfg.name] = BrokerHealth.DOWN
             except Exception as e:
-                print(f"[FAILOVER] Échec connexion {cfg.name}: {e}")
+                logger.warning(f"[FAILOVER] Échec connexion {cfg.name}: {e}")
                 self.health[cfg.name] = BrokerHealth.DOWN
 
     def get_active(self):
@@ -72,7 +72,7 @@ class BrokerFailover:
             if self.health.get(cfg.name) == BrokerHealth.HEALTHY:
                 old = self.active_broker
                 self.active_broker = cfg.name
-                print(f"[FAILOVER] Basculement {old} → {cfg.name}")
+                logger.warning(f"[FAILOVER] Basculement {old} → {cfg.name}")
                 return self.brokers[cfg.name]
 
         return None
@@ -105,7 +105,7 @@ class BrokerFailover:
             self.health[name] = BrokerHealth.DOWN
             if self.active_broker == name:
                 self.active_broker = None
-                print(f"[FAILOVER] {name} déclaré DOWN après {self._max_failures} échecs")
+                logger.warning(f"[FAILOVER] {name} déclaré DOWN après {self._max_failures} échecs")
         else:
             self.health[name] = BrokerHealth.DEGRADED
 
@@ -121,9 +121,9 @@ class BrokerFailover:
                             self.brokers[cfg.name] = broker
                             self.health[cfg.name] = BrokerHealth.HEALTHY
                             self._consecutive_failures[cfg.name] = 0
-                            print(f"[FAILOVER] {cfg.name} reconnecté")
+                            logger.warning(f"[FAILOVER] {cfg.name} reconnecté")
                 except Exception as e:
-                    print(f"[FAILOVER] Reconnexion {cfg.name} échouée: {e}")
+                    logger.warning(f"[FAILOVER] Reconnexion {cfg.name} échouée: {e}")
 
     def get_status(self) -> Dict:
         return {

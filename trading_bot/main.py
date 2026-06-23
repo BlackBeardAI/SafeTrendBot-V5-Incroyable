@@ -89,10 +89,10 @@ def check_license():
         from app.core.simple_license import SimpleLicense
         lic = SimpleLicense(EMBEDDED_KEY)
         if lic.validate():
-            print(f"[LICENCE] Clé valide: {EMBEDDED_KEY}")
+            logger.info(f"[LICENCE] Clé valide: {EMBEDDED_KEY}")
             return True
         else:
-            print(f"[LICENCE] Clé invalide: {EMBEDDED_KEY}")
+            logger.info(f"[LICENCE] Clé invalide: {EMBEDDED_KEY}")
             show_error_dialog(
                 "Clé de licence invalide",
                 f"La clé de licence intégrée dans cette version est invalide.\n\n"
@@ -153,9 +153,9 @@ def run_gui():
                 from app.ui.onboarding_wizard import run_onboarding_if_needed
                 run_onboarding_if_needed()
             except Exception as e:
-                print(f"[WARN] Onboarding non disponible: {e}")
+                logger.warning(f"[WARN] Onboarding non disponible: {e}")
     except Exception as e:
-        print(f"[WARN] Config onboarding: {e}")
+        logger.warning(f"[WARN] Config onboarding: {e}")
 
     # 5. Fenêtre principale
     try:
