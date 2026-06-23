@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from pathlib import Path
+import logging
+
+logger = logging.getLogger("auto_reporting")
 
 
 @dataclass
@@ -112,7 +115,7 @@ class AutoReporting:
             try:
                 self.telegram.send(msg)
             except Exception as e:
-                print(f"[REPORT] Erreur Telegram: {e}")
+                logger.warning(f"[REPORT] Erreur Telegram: {e}")
 
         # Sauvegarder localement
         filename = self._report_file / f"report_{report.week_end}.json"

@@ -15,6 +15,9 @@ from datetime import datetime
 from app.ui.widgets import PageHeader, Card, KPICard
 from app.ui.theme import COLORS
 from app.core.config_manager import config_manager
+import logging
+
+logger = logging.getLogger("analytics_view")
 
 
 class AnalyticsView(QWidget):
@@ -146,7 +149,7 @@ class AnalyticsView(QWidget):
             self._fill_volatility_analysis(journal)
             self._fill_confidence_analysis(journal)
         except Exception as e:
-            print(f"Erreur refresh analytics : {e}")
+            logger.warning(f"Erreur refresh analytics : {e}")
 
     def _fill_strategy_analysis(self, journal):
         stats = journal.analyze_by_strategy()

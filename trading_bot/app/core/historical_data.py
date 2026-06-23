@@ -7,6 +7,9 @@ Utilise yfinance (gratuit) pour les actions/forex et ccxt pour le crypto.
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger("historical_data")
 
 
 @dataclass
@@ -65,7 +68,7 @@ def fetch_historical_yfinance(symbol: str, years: int = 5) -> Optional[Dict]:
             'yf_symbol': yf_symbol,
         }
     except Exception as e:
-        print(f"Erreur fetch_historical pour {symbol}: {e}")
+        logger.warning(f"Erreur fetch_historical pour {symbol}: {e}")
         return None
 
 

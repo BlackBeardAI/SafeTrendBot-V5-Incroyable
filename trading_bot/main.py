@@ -29,6 +29,9 @@ def print_banner():
 ║                   Trading Bot Intelligent — V5                      ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """)
+import logging
+
+logger = logging.getLogger("main")
 
 
 def show_error_dialog(title, message):
@@ -98,7 +101,7 @@ def check_license():
             )
             return False
     except Exception as e:
-        print(f"[LICENCE] Erreur vérification: {e}")
+        logger.warning(f"[LICENCE] Erreur vérification: {e}")
         # En cas d'erreur, on laisse passer (mode libre)
         return True
 

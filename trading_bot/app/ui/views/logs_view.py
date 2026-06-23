@@ -12,6 +12,9 @@ from datetime import datetime
 
 from app.ui.widgets import PageHeader
 from app.ui.theme import COLORS
+import logging
+
+logger = logging.getLogger("logs_view")
 
 
 class LogsView(QWidget):
@@ -137,7 +140,7 @@ class LogsView(QWidget):
                         f.write(f"{entry['time'].isoformat()} [{entry['level']}] "
                                f"{entry['message']}\n")
             except IOError as e:
-                print(f"Erreur export : {e}")
+                logger.warning(f"Erreur export : {e}")
 
     def refresh(self):
         pass

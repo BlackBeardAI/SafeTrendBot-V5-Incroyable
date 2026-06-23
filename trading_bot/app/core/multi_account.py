@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from threading import Thread, Lock
 from datetime import datetime
+import logging
+
+logger = logging.getLogger("multi_account")
 
 
 @dataclass

@@ -12,6 +12,9 @@ from PyQt6.QtGui import QColor, QFont
 
 from app.ui.widgets import PageHeader, Card, KPICard
 from app.ui.theme import COLORS
+import logging
+
+logger = logging.getLogger("paper_trading_view")
 
 
 class PaperTradingView(QWidget):
@@ -225,4 +228,4 @@ class PaperTradingView(QWidget):
                     self.history_table.setItem(i, j, item)
 
         except Exception as e:
-            print(f"Erreur refresh paper : {e}")
+            logger.warning(f"Erreur refresh paper : {e}")

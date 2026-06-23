@@ -16,6 +16,9 @@ from app.core.market_hours import (
     format_timedelta, MarketStatus, MarketInfo,
 )
 from datetime import datetime
+import logging
+
+logger = logging.getLogger("market_hours_view")
 
 
 class MarketStatusCard(QFrame):
@@ -308,4 +311,4 @@ class MarketHoursView(QWidget):
                     )
                     self.overlap_label.setStyleSheet("")
         except Exception as e:
-            print(f"Erreur refresh market hours : {e}")
+            logger.warning(f"Erreur refresh market hours : {e}")

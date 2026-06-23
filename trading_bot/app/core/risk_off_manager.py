@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import threading
+import logging
+
+logger = logging.getLogger("risk_off_manager")
 
 
 @dataclass
@@ -60,7 +63,7 @@ class RiskOffManager:
                 self._check_risk_off()
                 self._stop_flag.wait(60)  # Vérifie toutes les minutes
             except Exception as e:
-                print(f"[RiskOff] Erreur: {e}")
+                logger.warning(f"[RiskOff] Erreur: {e}")
                 time.sleep(60)
 
     def _fetch_events(self):
@@ -110,7 +113,7 @@ class RiskOffManager:
                 self.broker.close_position(pos.ticket)
                 print(f"[RiskOff] Position {pos.ticket} fermée avant: {reason}")
         except Exception as e:
-            print(f"[RiskOff] Erreur fermeture: {e}")
+            logger.warning(f"[RiskOff] Erreur fermeture: {e}")
 
     def is_risk_off(self) -> tuple:
         """Retourne (active, reason, until)"""

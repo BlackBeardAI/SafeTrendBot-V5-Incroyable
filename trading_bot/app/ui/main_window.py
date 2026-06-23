@@ -35,6 +35,9 @@ from app.ui.views.watchlist_view import WatchlistView
 from app.ui.views.recommendations_view import RecommendationsView
 from app.ui.views.strategy_params_view import StrategyParamsView
 from app.ui.theme import apply_dark_theme, apply_light_theme, COLORS
+import logging
+
+logger = logging.getLogger("main_window")
 
 
 class SidebarButton(QPushButton):
@@ -606,7 +609,7 @@ class MainWindow(QMainWindow):
             try:
                 current.refresh()
             except Exception as e:
-                print(f"Erreur refresh : {e}")
+                logger.warning(f"Erreur refresh : {e}")
 
     # ========================================================================
     # SYSTEM TRAY / FERMETURE

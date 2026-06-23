@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Callable
 from enum import Enum
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger("broker_failover")
 
 
 class BrokerHealth(Enum):

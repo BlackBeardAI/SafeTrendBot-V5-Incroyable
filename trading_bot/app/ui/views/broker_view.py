@@ -14,6 +14,9 @@ from app.ui.widgets import PageHeader, Card
 from app.core.config_manager import config_manager
 from app.brokers import BrokerType
 from app.brokers.factory import list_available_brokers
+import logging
+
+logger = logging.getLogger("broker_view")
 
 
 class BrokerView(QWidget):
@@ -366,7 +369,7 @@ class BrokerView(QWidget):
 
             self._update_install_status()
         except Exception as e:
-            print(f"Erreur chargement config broker : {e}")
+            logger.warning(f"Erreur chargement config broker : {e}")
 
     def _save(self, show_message=False):
         try:

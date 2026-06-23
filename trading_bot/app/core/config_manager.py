@@ -179,6 +179,9 @@ class UIConfig:
 
 
 from app.core.pin_lock import PinConfig
+import logging
+
+logger = logging.getLogger("config_manager")
 
 
 @dataclass
@@ -246,7 +249,7 @@ class ConfigManager:
                 data = json.load(f)
             return self._dict_to_config(data)
         except (IOError, json.JSONDecodeError, KeyError) as e:
-            print(f"Erreur chargement config, utilisation par défaut : {e}")
+            logger.warning(f"Erreur chargement config, utilisation par défaut : {e}")
             return AppConfig()
 
     def save(self, config: Optional[AppConfig] = None, backup: bool = False):
@@ -264,7 +267,7 @@ class ConfigManager:
             if backup:
                 self.auto_backup(config)
         except IOError as e:
-            print(f"Erreur sauvegarde config : {e}")
+            logger.warning(f"Erreur sauvegarde config : {e}")
 
     def _dict_to_config(self, data: dict) -> AppConfig:
         """Reconstruit AppConfig depuis un dict (gestion des champs manquants)"""
@@ -427,7 +430,7 @@ class ConfigManager:
                     pass
             return backup_path
         except (IOError, OSError) as e:
-            print(f"Erreur auto_backup config : {e}")
+            logger.warning(f"Erreur auto_backup config : {e}")
             return None
 
 

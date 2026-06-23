@@ -2,12 +2,15 @@
 Backtest parallélisé avec ProcessPoolExecutor.
 Grid search des paramètres en parallèle.
 """
+import logging
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 from datetime import datetime
+
+logger = logging.getLogger("parallel_backtest")
 
 from app.core.strategies import (
     TrendFollowingStrategy, MeanReversionStrategy, BreakoutStrategy, MACDStrategy,
@@ -163,7 +166,7 @@ class ParallelBacktest:
                     result = future.result(timeout=30)
                     results.append(result)
                 except Exception as e:
-                    print(f"[BACKTEST] Erreur worker: {e}")
+                    logger.warning(f"[BACKTEST] Erreur worker: {e}")
 
         # Trier par Sharpe
         results = sorted(results, key=lambda r: r.sharpe, reverse=True)

@@ -11,6 +11,9 @@ from PyQt6.QtGui import QColor, QFont
 
 from app.ui.widgets import PageHeader, Card
 from app.ui.theme import COLORS
+import logging
+
+logger = logging.getLogger("positions_view")
 
 try:
     import MetaTrader5 as mt5
@@ -161,7 +164,7 @@ class PositionsView(QWidget):
 
             self.open_count_label.setText(f"{len(positions)} position(s) ouverte(s)")
         except Exception as e:
-            print(f"Erreur refresh positions : {e}")
+            logger.warning(f"Erreur refresh positions : {e}")
 
     def _refresh_history(self):
         """Rafraîchit l'historique"""
@@ -198,7 +201,7 @@ class PositionsView(QWidget):
 
             self.history_count_label.setText(f"{len(deals)} trade(s) dans l'historique")
         except Exception as e:
-            print(f"Erreur refresh historique : {e}")
+            logger.warning(f"Erreur refresh historique : {e}")
 
     def _close_all_positions(self):
         """Ferme toutes les positions du bot"""

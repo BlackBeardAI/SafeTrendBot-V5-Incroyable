@@ -412,6 +412,9 @@ class PDFReportGenerator:
 
 import threading
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger("pdf_reports")
 
 
 class ReportScheduler:
@@ -447,7 +450,7 @@ class ReportScheduler:
                 try:
                     self.generate_now()
                 except Exception as e:
-                    print(f"Erreur génération rapport : {e}")
+                    logger.warning(f"Erreur génération rapport : {e}")
                 self._stop_event.wait(300)  # 5 minutes pour éviter double gen
             else:
                 self._stop_event.wait(60)
