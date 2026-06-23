@@ -15,6 +15,7 @@ class PinConfig:
     enabled: bool = False
     pin_hash: str = ""
     lock_on_startup: bool = False
+    lock_on_idle_minutes: int = 0
     max_attempts: int = 5
     auto_lock_minutes: int = 30
     salt: str = ""
